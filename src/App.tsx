@@ -20,26 +20,71 @@ import {
   Lock,
   Mail,
   ArrowRight,
-  LogOut
+  LogOut,
+  LayoutDashboard,
+  FileText,
+  TrendingUp,
+  CreditCard,
+  GraduationCap,
+  Zap,
+  Sparkles,
+  Rocket,
+  Star,
+  BarChart2,
+  Menu,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const featureCards = [
   {
-    icon: '⚡',
-    title: 'Fast',
-    description: 'Lightning-fast AI responses powered by Google Gemini for real-time career coaching and interview practice.',
+    icon: <Zap size={28} />,
+    title: 'Interview Coach',
+    description: 'AI-powered mock interviews with real-time feedback tailored to your target role and industry.',
+    badge: 'Popular',
   },
   {
-    icon: '✨',
-    title: 'Beautiful',
-    description: 'Elegant, modern UI designed to keep you focused and motivated throughout your career development journey.',
+    icon: <FileText size={28} />,
+    title: 'Resume Builder',
+    description: 'Smart resume analysis and optimization powered by advanced AI to help you stand out.',
   },
   {
-    icon: '🚀',
-    title: 'Powerful',
-    description: 'Advanced AI capabilities to analyze your performance, generate personalized feedback, and accelerate your growth.',
+    icon: <BarChart2 size={28} />,
+    title: 'Career Insights',
+    description: 'Data-driven analytics on your performance, strengths, and areas for growth over time.',
+    badge: 'New',
   },
+  {
+    icon: <GraduationCap size={28} />,
+    title: 'AI Coach',
+    description: 'Personalized career coaching sessions with actionable roadmaps for your next big move.',
+  },
+  {
+    icon: <Sparkles size={28} />,
+    title: 'Skill Assessment',
+    description: 'Identify skill gaps and receive curated learning paths to reach your career goals faster.',
+  },
+  {
+    icon: <Rocket size={28} />,
+    title: 'Job Matching',
+    description: 'Discover roles that match your profile and get interview-ready with targeted preparation.',
+  },
+];
+
+interface NavItem {
+  id: AppStep | 'dashboard';
+  label: string;
+  icon: React.ReactNode;
+  requiresAuth?: boolean;
+}
+
+const navItems: NavItem[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
+  { id: 'setup', label: 'Interview', icon: <MessageSquare size={20} />, requiresAuth: true },
+  { id: 'home', label: 'Resume', icon: <FileText size={20} /> },
+  { id: 'home', label: 'Insights', icon: <TrendingUp size={20} /> },
+  { id: 'home', label: 'Coach', icon: <GraduationCap size={20} />, requiresAuth: true },
+  { id: 'pricing', label: 'Billing', icon: <CreditCard size={20} /> },
 ];
 
 // Initialize Gemini lazily to avoid crashing when API key is absent
@@ -71,6 +116,9 @@ export default function App() {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [jobTitle, setJobTitle] = useState('');
   const [industry, setIndustry] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [activeNav, setActiveNav] = useState('Dashboard');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -83,6 +131,7 @@ export default function App() {
 
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoggedIn(true);
     if (authMode === 'signup') {
       setStep('pricing');
     } else {
@@ -213,75 +262,181 @@ export default function App() {
     }
   };
 
+  const handleNavClick = (item: NavItem) => {
+    setActiveNav(item.label);
+    if (item.requiresAuth && !isLoggedIn) {
+      setStep('auth');
+    } else if (item.id === 'dashboard') {
+      setStep('home');
+    } else {
+      setStep(item.id as AppStep);
+    }
+    setSidebarOpen(false);
+  };
+
+  const getActiveNav = () => {
+    // Sync active nav with step changes (e.g. back navigation)
+    if (step === 'setup' || step === 'interview' || step === 'summary') return 'Interview';
+    if (step === 'pricing') return 'Billing';
+    if (step === 'home' && activeNav !== 'Dashboard' && activeNav !== 'Resume' && activeNav !== 'Insights' && activeNav !== 'Coach') return 'Dashboard';
+    return activeNav;
+  };
+
   return (
-    <div className="min-h-screen bg-black font-sans text-white selection:bg-red-600 selection:text-white">
-      {/* Header */}
-      <header className="sticky top-0 z-10 bg-black/80 backdrop-blur-md border-b border-white/10 px-6 py-4">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-red-600 rounded-lg flex items-center justify-center text-white shadow-[0_0_20px_rgba(220,38,38,0.3)] border border-white/20">
-              <Target size={24} />
-            </div>
-            <div>
-              <h1 className="text-xl font-black tracking-tighter text-white uppercase italic">EnvisionPaths AI</h1>
-              <p className="text-[10px] font-bold text-red-400 uppercase tracking-[0.2em]">Elite Career Coaching</p>
-            </div>
+    <div className="min-h-screen bg-[#0f0f0f] font-sans text-white selection:bg-red-600 selection:text-white flex">
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 z-30 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside className={`fixed left-0 top-0 h-screen w-20 bg-[#111111] border-r border-white/10 flex flex-col items-center py-5 z-40 transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        {/* Logo */}
+        <div className="mb-8 flex flex-col items-center">
+          <div className="w-11 h-11 bg-red-600 rounded-xl flex items-center justify-center text-white shadow-[0_0_20px_rgba(220,38,38,0.4)]">
+            <Target size={22} />
           </div>
-          
-          {step !== 'home' && step !== 'auth' && (
-            <div className="flex items-center gap-4">
+        </div>
+
+        {/* Nav items */}
+        <nav className="flex flex-col gap-1 flex-1 w-full px-2">
+          {navItems.map((item) => {
+            const active = getActiveNav() === item.label;
+            return (
+              <button
+                key={item.label}
+                onClick={() => handleNavClick(item)}
+                title={item.label}
+                className={`w-full flex flex-col items-center gap-1 py-3 px-1 rounded-xl transition-all group ${
+                  active 
+                    ? 'bg-red-600 text-white shadow-lg shadow-red-900/40' 
+                    : 'text-zinc-500 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <span className={active ? 'text-white' : 'group-hover:text-red-400 transition-colors'}>{item.icon}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider leading-none">{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Bottom: logout */}
+        {isLoggedIn && (
+          <button
+            onClick={() => { setStep('home'); setIsLoggedIn(false); setSidebarOpen(false); }}
+            className="text-zinc-500 hover:text-red-400 transition-colors p-3 rounded-xl hover:bg-white/5"
+            title="Logout"
+          >
+            <LogOut size={20} />
+          </button>
+        )}
+      </aside>
+
+      {/* Main content */}
+      <div className="flex-1 lg:ml-20 flex flex-col min-h-screen">
+        {/* Top header */}
+        <header className="sticky top-0 z-10 bg-[#0f0f0f]/90 backdrop-blur-md border-b border-white/10 px-6 py-4">
+          <div className="flex items-center justify-between">
+            {/* Mobile menu toggle */}
+            <button
+              className="lg:hidden text-zinc-400 hover:text-white mr-4 transition-colors"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+            >
+              {sidebarOpen ? <X size={22} /> : <Menu size={22} />}
+            </button>
+
+            {/* Branding */}
+            <div className="flex items-center gap-3">
+              <div>
+                <h1 className="text-base font-black tracking-tighter text-white uppercase italic leading-none">
+                  <span className="text-red-500">ENVISION</span>PATHS
+                </h1>
+                <p className="text-[10px] font-bold text-[#FFD700] uppercase tracking-[0.25em] leading-none mt-0.5">Elite Career Coaching</p>
+              </div>
+            </div>
+
+            {/* Right actions */}
+            <div className="flex items-center gap-3 ml-auto">
               {step === 'interview' && (
                 <button 
                   onClick={endInterview}
-                  className="text-xs font-black uppercase tracking-widest text-white bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md border border-white/20 transition-all shadow-lg shadow-red-900/20"
+                  className="text-xs font-black uppercase tracking-widest text-white bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg border border-white/20 transition-all shadow-lg shadow-red-900/20"
                 >
                   End Session
                 </button>
               )}
-              <button 
-                onClick={() => setStep('home')}
-                className="text-white/60 hover:text-red-400 transition-colors"
-                title="Logout"
-              >
-                <LogOut size={20} />
-              </button>
-            </div>
-          )}
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto p-6">
-        <AnimatePresence mode="wait">
-          {step === 'home' ? (
-            <motion.div
-              key="home"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="app-home"
-            >
-              <div className="text-center mb-16">
-                <h2 className="welcome-heading">Welcome to EnvisionPaths AI</h2>
-                <p className="welcome-tagline">Build amazing applications with AI Studio</p>
+              {!isLoggedIn && step !== 'auth' && (
                 <button
                   onClick={() => setStep('auth')}
-                  className="mt-8 inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] px-10 py-5 rounded-2xl transition-all shadow-lg shadow-red-900/30 border border-white/20"
+                  className="text-xs font-black uppercase tracking-widest text-white bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg border border-white/20 transition-all"
                 >
-                  Get Started <ArrowRight size={18} />
+                  Sign In
                 </button>
-              </div>
+              )}
+            </div>
+          </div>
+        </header>
 
-              <div className="feature-cards">
-                {featureCards.map((card) => (
-                  <div key={card.title} className="feature-card">
-                    <span className="feature-card-icon">{card.icon}</span>
-                    <h3 className="feature-card-title">{card.title}</h3>
-                    <p className="feature-card-desc">{card.description}</p>
+        <main className="flex-1 p-6 max-w-5xl w-full mx-auto">
+          <AnimatePresence mode="wait">
+            {step === 'home' ? (
+              <motion.div
+                key="home"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+              >
+                {/* Hero section */}
+                <div className="text-center mb-14 pt-6">
+                  <div className="inline-flex items-center gap-2 bg-[#FFD700]/10 border border-[#FFD700]/30 px-4 py-1.5 rounded-full mb-6">
+                    <Star size={12} className="text-[#FFD700]" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#FFD700]">AI-Powered Career Platform</span>
                   </div>
-                ))}
-              </div>
-            </motion.div>
-          ) : step === 'auth' ? (
+                  <h2 className="text-5xl md:text-6xl font-black tracking-tighter uppercase italic mb-4 leading-none">
+                    Elevate Your <span className="text-red-500">Career</span>
+                  </h2>
+                  <p className="text-zinc-400 text-lg max-w-xl mx-auto mb-8 leading-relaxed">
+                    Professional AI coaching, mock interviews, and career insights to accelerate your path to success.
+                  </p>
+                  <button
+                    onClick={() => setStep('auth')}
+                    className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] px-10 py-5 rounded-2xl transition-all shadow-lg shadow-red-900/30 border border-white/20"
+                  >
+                    Get Started <ArrowRight size={18} />
+                  </button>
+                </div>
+
+                {/* Feature cards grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {featureCards.map((card) => (
+                    <motion.div 
+                      key={card.title} 
+                      whileHover={{ y: -4 }}
+                      className="group bg-[#1a1a1a] border border-white/8 rounded-2xl p-6 hover:border-red-600/50 transition-all cursor-pointer relative overflow-hidden"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-br from-red-600/0 to-red-600/0 group-hover:from-red-600/5 group-hover:to-transparent transition-all duration-300" />
+                      <div className="relative z-10">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="w-12 h-12 bg-red-600/15 border border-red-600/30 rounded-xl flex items-center justify-center text-red-500 group-hover:bg-red-600/25 transition-colors">
+                            {card.icon}
+                          </div>
+                          {card.badge && (
+                            <span className="text-[9px] font-black uppercase tracking-widest bg-[#FFD700]/15 text-[#FFD700] border border-[#FFD700]/30 px-2.5 py-1 rounded-full">
+                              {card.badge}
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-base font-black uppercase tracking-tight mb-2 group-hover:text-red-400 transition-colors">{card.title}</h3>
+                        <p className="text-zinc-500 text-sm leading-relaxed">{card.description}</p>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+            ) : step === 'auth' ? (
             <motion.div 
               key="auth"
               initial={{ opacity: 0, scale: 0.95 }}
@@ -759,7 +914,8 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

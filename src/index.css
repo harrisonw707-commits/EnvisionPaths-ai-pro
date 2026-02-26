@@ -1,15 +1,11 @@
 :root {
-  --color-brand-purple: #dc2626; /* Changed to red */
+  --color-brand-red: #dc2626;
+  --color-brand-gold: #FFD700;
+  --color-bg-primary: #0f0f0f;
+  --color-bg-secondary: #1a1a1a;
+  --color-bg-sidebar: #111111;
 }
 
-.text-glow-purple {
-  text-shadow: 0 0 5px #dc2626, 0 0 10px #dc2626; /* Changed to red shadow */
-}
-
-.focus\:border-purple-600:focus {
-  border-color: #dc2626; /* Changed to red */
-}
-
-.focus\:ring-purple-600:focus {
-  ring-color: #dc2626; /* Changed to red */
+.text-glow-red {
+  text-shadow: 0 0 5px #dc2626, 0 0 10px #dc2626;
 }
