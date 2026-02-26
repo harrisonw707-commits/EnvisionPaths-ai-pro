@@ -27,23 +27,23 @@ import { motion, AnimatePresence } from 'motion/react';
 const featureCards = [
   {
     icon: '🎯',
-    title: 'Real Interview Practice',
-    description: 'Practice with realistic interview questions tailored to your target role and industry — no scripts, no fluff.',
+    title: 'Practice Real Interviews',
+    description: 'Practice with realistic interview questions tailored to your role and industry — authentic, unscripted practice.',
   },
   {
     icon: '💬',
-    title: 'Honest Feedback',
-    description: 'Get direct, actionable feedback on your answers so you know exactly what to improve before the real thing.',
+    title: 'Thoughtful Feedback to Help You Grow',
+    description: 'Learn what resonates and where to focus your growth.',
   },
   {
     icon: '🆓',
     title: '2 Free Sessions Monthly',
-    description: 'Start for free with 2 practice sessions every month. No credit card required to get going.',
+    description: 'Begin for free with 2 practice sessions every month. No credit card required.',
   },
   {
     icon: '📄',
-    title: 'Upload Your Resume',
-    description: 'Upload your resume to help tailor your practice session to your background. Your file stays private.',
+    title: 'Share Your Background',
+    description: 'Share your background to tailor your practice session. Your information stays private.',
   },
 ];
 
@@ -266,16 +266,16 @@ export default function App() {
               className="app-home"
             >
               <div className="text-center mb-16">
-                <h2 className="welcome-heading">Practice Interviews. Get Honest Feedback. Land the Job.</h2>
-                <p className="welcome-tagline">Real practice for real situations — whether you're just starting out, switching careers, or getting back on your feet.</p>
+                <h2 className="welcome-heading">Practice Interviews. Receive Thoughtful Feedback. Move Forward.</h2>
+                <p className="welcome-tagline">Authentic practice for real situations — whether you're just starting out, switching careers, or getting back on your feet.</p>
                 <div className="mt-8 flex flex-col items-center gap-3">
                   <button
                     onClick={() => setStep('auth')}
                     className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] px-10 py-5 rounded-2xl transition-all shadow-lg shadow-red-900/30 border border-white/20"
                   >
-                    Get 2 free sessions <ArrowRight size={18} />
+                    Begin Your Journey <ArrowRight size={18} />
                   </button>
-                  <p className="text-xs text-zinc-500">Real practice. Real feedback. See if you're ready.</p>
+                  <p className="text-xs text-zinc-500">Authentic practice. Thoughtful feedback. Whenever you're ready.</p>
                 </div>
               </div>
 
@@ -301,9 +301,9 @@ export default function App() {
               <div className="bg-zinc-900/50 border border-white/10 p-8 rounded-2xl backdrop-blur-xl shadow-2xl">
                 <div className="text-center mb-10">
                   <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-2">
-                    {authMode === 'login' ? 'Welcome Back' : 'Join Elite'}
+                    {authMode === 'login' ? 'Welcome Back' : 'Welcome'}
                   </h2>
-                  <p className="text-zinc-500 text-sm">Elevate your career trajectory with EnvisionPaths.</p>
+                  <p className="text-zinc-500 text-sm">We're glad you're here. Let's support your growth.</p>
                 </div>
 
                 <form onSubmit={handleAuth} className="space-y-5">
@@ -395,7 +395,7 @@ export default function App() {
 
                   <section>
                     <h3 className="text-white font-bold uppercase tracking-widest mb-3">4. Your Rights</h3>
-                    <p>You have the right to access, correct, or delete your data at any time. Contact our elite support team for any data-related inquiries.</p>
+                    <p>You have the right to access, correct, or delete your data at any time. Contact our support team for any data-related inquiries.</p>
                   </section>
                 </div>
 
@@ -421,7 +421,7 @@ export default function App() {
                 <div className="space-y-8 text-zinc-400 text-sm leading-relaxed">
                   <section>
                     <h3 className="text-white font-bold uppercase tracking-widest mb-3">1. Acceptance of Terms</h3>
-                    <p>By accessing EnvisionPaths, you agree to be bound by these elite terms of service. Our platform is designed for professional development and career advancement simulation.</p>
+                    <p>By accessing EnvisionPaths, you agree to be bound by these terms of service. Our platform is designed for professional development and career advancement simulation.</p>
                   </section>
 
                   <section>
@@ -458,12 +458,12 @@ export default function App() {
             >
               <div className="text-center mb-12">
                 <h2 className="text-5xl font-black tracking-tighter uppercase italic mb-4">
-                  {sessionsUsed >= 2 && !selectedPlan ? 'Limit Reached' : 'Select Your Tier'}
+                  {sessionsUsed >= 2 && !selectedPlan ? 'Ready to Continue?' : 'Choose Your Path'}
                 </h2>
                 <p className="text-zinc-400">
                   {sessionsUsed >= 2 && !selectedPlan 
-                    ? 'You have used your 2 free sessions for this month. Upgrade to continue.' 
-                    : 'Choose the level of preparation required for your next move.'}
+                    ? "You've used your 2 free sessions for this month. Upgrade to keep going." 
+                    : 'Find the support that fits where you are in your journey.'}
                 </p>
               </div>
 
@@ -561,9 +561,9 @@ export default function App() {
               className="max-w-2xl mx-auto mt-12"
             >
               <div className="bg-zinc-900/30 border border-white/10 rounded-3xl p-10 backdrop-blur-sm">
-                <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-3">Prepare for Battle</h2>
+                <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-3">Let's Get You Ready</h2>
                 <div className="flex items-center justify-between mb-10">
-                  <p className="text-zinc-400 leading-relaxed">The interview is your arena. Define your target and let's begin the simulation.</p>
+                  <p className="text-zinc-400 leading-relaxed">Tell us about the role you're preparing for, and we'll tailor your practice session.</p>
                   {!selectedPlan && (
                     <div className="bg-red-600/10 border border-red-600/20 px-3 py-1 rounded-full">
                       <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest">
@@ -609,7 +609,7 @@ export default function App() {
                     disabled={!jobTitle}
                     className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.3em] py-6 rounded-2xl shadow-xl shadow-red-900/20 transition-all flex items-center justify-center gap-3 border border-white/20 group"
                   >
-                    Initialize Simulation
+                    Begin Practice Session
                     <ChevronRight size={24} className="group-hover:translate-x-1 transition-transform" />
                   </button>
                 </div>
@@ -681,7 +681,7 @@ export default function App() {
                 <form onSubmit={handleSendMessage} className="relative">
                   <input 
                     type="text"
-                    placeholder="Provide your response..."
+                    placeholder="Share your answer..."
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     className="w-full pl-8 pr-20 py-6 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-lg"
@@ -722,7 +722,7 @@ export default function App() {
                       <Award size={40} />
                     </div>
                     <div>
-                      <h2 className="text-4xl font-black tracking-tighter uppercase italic">Performance Report</h2>
+                      <h2 className="text-4xl font-black tracking-tighter uppercase italic">Your Growth Summary</h2>
                       <p className="text-red-500 font-bold uppercase tracking-widest text-xs mt-1">{jobTitle}</p>
                     </div>
                   </div>
@@ -731,7 +731,7 @@ export default function App() {
                     <div className="space-y-8 py-20">
                       <div className="flex flex-col items-center justify-center gap-6">
                         <RefreshCw className="text-red-600 animate-spin" size={64} />
-                        <p className="text-zinc-400 font-black uppercase tracking-[0.3em] animate-pulse">Processing Simulation Data</p>
+                        <p className="text-zinc-400 font-black uppercase tracking-[0.3em] animate-pulse">Preparing Your Feedback</p>
                       </div>
                     </div>
                   ) : (
@@ -751,7 +751,7 @@ export default function App() {
                           }}
                           className="flex-1 bg-red-600 text-white font-black uppercase tracking-[0.3em] py-6 rounded-2xl shadow-xl shadow-red-900/40 hover:bg-red-700 transition-all border border-white/20"
                         >
-                          New Simulation
+                          Practice Again
                         </button>
                         <button 
                           onClick={() => window.print()}
