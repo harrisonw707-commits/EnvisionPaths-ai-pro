@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-brand-red: #DC2626;
+  --color-brand-black: #000000;
+}
+
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .bg-dark-gradient {
+    background: linear-gradient(180deg, #1a1a1a 0%, #000000 100%);
+  }
+  .border-white-trim {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+  .text-glow-red {
+    text-shadow: 0 0 15px rgba(220, 38, 38, 0.5);
+  }
+}
+
+body {
+  @apply bg-black text-white antialiased;
+}
+
+input, select {
+  @apply bg-zinc-900 border-zinc-800 text-white focus:border-red-600 focus:ring-red-600 transition-all;
+}
