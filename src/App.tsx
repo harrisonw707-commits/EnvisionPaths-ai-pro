@@ -26,19 +26,24 @@ import { motion, AnimatePresence } from 'motion/react';
 
 const featureCards = [
   {
-    icon: '⚡',
-    title: 'Fast',
-    description: 'Lightning-fast AI responses powered by Google Gemini for real-time career coaching and interview practice.',
+    icon: '🎯',
+    title: 'Real Interview Practice',
+    description: 'Practice with realistic interview questions tailored to your target role and industry — no scripts, no fluff.',
   },
   {
-    icon: '✨',
-    title: 'Beautiful',
-    description: 'Elegant, modern UI designed to keep you focused and motivated throughout your career development journey.',
+    icon: '💬',
+    title: 'Honest Feedback',
+    description: 'Get direct, actionable feedback on your answers so you know exactly what to improve before the real thing.',
   },
   {
-    icon: '🚀',
-    title: 'Powerful',
-    description: 'Advanced AI capabilities to analyze your performance, generate personalized feedback, and accelerate your growth.',
+    icon: '🆓',
+    title: '2 Free Sessions Monthly',
+    description: 'Start for free with 2 practice sessions every month. No credit card required to get going.',
+  },
+  {
+    icon: '📄',
+    title: 'Upload Your Resume',
+    description: 'Upload your resume to help tailor your practice session to your background. Your file stays private.',
   },
 ];
 
@@ -261,22 +266,25 @@ export default function App() {
               className="app-home"
             >
               <div className="text-center mb-16">
-                <h2 className="welcome-heading">Welcome to EnvisionPaths AI</h2>
-                <p className="welcome-tagline">Build amazing applications with AI Studio</p>
-                <button
-                  onClick={() => setStep('auth')}
-                  className="mt-8 inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] px-10 py-5 rounded-2xl transition-all shadow-lg shadow-red-900/30 border border-white/20"
-                >
-                  Get Started <ArrowRight size={18} />
-                </button>
+                <h2 className="welcome-heading">Practice Interviews. Get Honest Feedback. Land the Job.</h2>
+                <p className="welcome-tagline">Real practice for real situations — whether you're just starting out, switching careers, or getting back on your feet.</p>
+                <div className="mt-8 flex flex-col items-center gap-3">
+                  <button
+                    onClick={() => setStep('auth')}
+                    className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] px-10 py-5 rounded-2xl transition-all shadow-lg shadow-red-900/30 border border-white/20"
+                  >
+                    Get 2 free sessions <ArrowRight size={18} />
+                  </button>
+                  <p className="text-xs text-zinc-500">Real practice. Real feedback. See if you're ready.</p>
+                </div>
               </div>
 
-              <div className="feature-cards">
+              <div className="feature-cards grid grid-cols-1 sm:grid-cols-2 gap-6">
                 {featureCards.map((card) => (
-                  <div key={card.title} className="feature-card">
-                    <span className="feature-card-icon">{card.icon}</span>
-                    <h3 className="feature-card-title">{card.title}</h3>
-                    <p className="feature-card-desc">{card.description}</p>
+                  <div key={card.title} className="feature-card bg-zinc-900/50 border border-white/10 rounded-2xl p-6 hover:border-red-600/50 transition-colors">
+                    <span className="feature-card-icon text-3xl mb-3 block">{card.icon}</span>
+                    <h3 className="feature-card-title font-black uppercase tracking-wide text-white mb-2">{card.title}</h3>
+                    <p className="feature-card-desc text-zinc-400 text-sm leading-relaxed">{card.description}</p>
                   </div>
                 ))}
               </div>
