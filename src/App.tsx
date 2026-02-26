@@ -20,7 +20,12 @@ import {
   Lock,
   Mail,
   ArrowRight,
-  LogOut
+  LogOut,
+  LayoutDashboard,
+  FileText,
+  BarChart2,
+  CreditCard,
+  Menu,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -71,6 +76,8 @@ export default function App() {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [jobTitle, setJobTitle] = useState('');
   const [industry, setIndustry] = useState('');
+  const [activeNavId, setActiveNavId] = useState<string>('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -213,44 +220,122 @@ export default function App() {
     }
   };
 
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, step: 'home' as AppStep },
+    { id: 'interview', label: 'Interview', icon: MessageSquare, step: 'setup' as AppStep },
+    { id: 'resume', label: 'Resume', icon: FileText, step: 'setup' as AppStep },
+    { id: 'insights', label: 'Insights', icon: BarChart2, step: 'summary' as AppStep },
+    { id: 'coach', label: 'Coach', icon: User, step: 'setup' as AppStep },
+    { id: 'billing', label: 'Billing', icon: CreditCard, step: 'pricing' as AppStep },
+  ];
+
+  const stepNavMap: Partial<Record<AppStep, string>> = {
+    home: 'dashboard',
+    interview: 'interview',
+    pricing: 'billing',
+    summary: 'insights',
+  };
+  const activeNav = stepNavMap[step] ?? activeNavId;
+
   return (
-    <div className="min-h-screen bg-black font-sans text-white selection:bg-red-600 selection:text-white">
-      {/* Header */}
-      <header className="sticky top-0 z-10 bg-black/80 backdrop-blur-md border-b border-white/10 px-6 py-4">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
+    <div className="min-h-screen bg-[#0f0f0f] font-sans text-white selection:bg-red-600 selection:text-white flex h-screen overflow-hidden">
+      {/* Sidebar */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-60 bg-[#111111] border-r border-white/10 flex flex-col transition-transform duration-300 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        } lg:translate-x-0`}
+      >
+        {/* Branding */}
+        <div className="p-5 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-red-600 rounded-lg flex items-center justify-center text-white shadow-[0_0_20px_rgba(220,38,38,0.3)] border border-white/20">
-              <Target size={24} />
+            <div className="w-9 h-9 bg-red-600 rounded-lg flex items-center justify-center text-white shadow-[0_0_20px_rgba(220,38,38,0.3)] border border-white/20 flex-shrink-0">
+              <Target size={20} />
             </div>
             <div>
-              <h1 className="text-xl font-black tracking-tighter text-white uppercase italic">EnvisionPaths AI</h1>
-              <p className="text-[10px] font-bold text-red-400 uppercase tracking-[0.2em]">Elite Career Coaching</p>
+              <h1 className="text-xs font-black tracking-tighter text-white uppercase">ENVISIONPATHS</h1>
+              <p className="text-[8px] font-bold text-red-400 uppercase tracking-[0.15em]">Elite Career Coaching</p>
             </div>
           </div>
-          
-          {step !== 'home' && step !== 'auth' && (
-            <div className="flex items-center gap-4">
-              {step === 'interview' && (
-                <button 
-                  onClick={endInterview}
-                  className="text-xs font-black uppercase tracking-widest text-white bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md border border-white/20 transition-all shadow-lg shadow-red-900/20"
-                >
-                  End Session
-                </button>
-              )}
-              <button 
-                onClick={() => setStep('home')}
-                className="text-white/60 hover:text-red-400 transition-colors"
-                title="Logout"
-              >
-                <LogOut size={20} />
-              </button>
-            </div>
-          )}
         </div>
-      </header>
 
-      <main className="max-w-5xl mx-auto p-6">
+        {/* Navigation */}
+        <nav className="flex-1 p-4 space-y-1">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => { setStep(item.step); setActiveNavId(item.id); setSidebarOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
+                  activeNav === item.id
+                    ? 'bg-red-600 text-white shadow-lg shadow-red-900/30'
+                    : 'text-zinc-500 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <Icon size={16} />
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Logout */}
+        <div className="p-4 border-t border-white/10">
+          <button
+            onClick={() => { setStep('home'); setSidebarOpen(false); }}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-xs font-black uppercase tracking-widest text-zinc-500 hover:text-white hover:bg-white/5 transition-all"
+          >
+            <LogOut size={16} />
+            Logout
+          </button>
+        </div>
+      </aside>
+
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Main content area */}
+      <div className="flex-1 flex flex-col min-w-0 lg:ml-60 overflow-hidden">
+        {/* Mobile top bar */}
+        <header className="lg:hidden sticky top-0 z-10 bg-black/80 backdrop-blur-md border-b border-white/10 px-4 py-4 flex items-center justify-between flex-shrink-0">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="text-white/60 hover:text-white transition-colors"
+          >
+            <Menu size={24} />
+          </button>
+          <h1 className="text-sm font-black tracking-tighter text-white uppercase italic">EnvisionPaths AI</h1>
+          {step === 'interview' ? (
+            <button
+              onClick={endInterview}
+              className="text-xs font-black uppercase tracking-widest text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-md border border-white/20 transition-all"
+            >
+              End
+            </button>
+          ) : (
+            <div className="w-6" />
+          )}
+        </header>
+
+        {/* Desktop "End Session" bar shown only during interview */}
+        {step === 'interview' && (
+          <header className="hidden lg:flex sticky top-0 z-10 bg-black/80 backdrop-blur-md border-b border-white/10 px-6 py-3 items-center justify-end flex-shrink-0">
+            <button
+              onClick={endInterview}
+              className="text-xs font-black uppercase tracking-widest text-white bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md border border-white/20 transition-all shadow-lg shadow-red-900/20"
+            >
+              End Session
+            </button>
+          </header>
+        )}
+
+        <main className={`flex-1 ${step === 'interview' ? 'flex flex-col overflow-hidden' : 'overflow-auto'} p-6`}>
+          <div className={step === 'interview' ? 'flex flex-col flex-1 min-h-0' : 'max-w-5xl mx-auto'}>
         <AnimatePresence mode="wait">
           {step === 'home' ? (
             <motion.div
@@ -628,7 +713,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="flex flex-col h-[calc(100vh-180px)]"
+              className="flex flex-col flex-1 min-h-0"
             >
               <div className="flex-1 overflow-y-auto space-y-8 pb-8 px-2 scrollbar-hide">
                 {messages.map((msg, i) => (
@@ -759,7 +844,9 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-      </main>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
