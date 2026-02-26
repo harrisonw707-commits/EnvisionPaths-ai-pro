@@ -20,9 +20,15 @@ import {
   Lock,
   Mail,
   ArrowRight,
-  LogOut
+  LogOut,
+  FileText,
+  Upload,
+  X,
+  Paperclip
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+const RESUME_TEXT_MAX_LENGTH = 3000;
 
 const featureCards = [
   {
@@ -62,7 +68,7 @@ interface Message {
   timestamp: Date;
 }
 
-type AppStep = 'home' | 'auth' | 'pricing' | 'setup' | 'interview' | 'summary' | 'privacy' | 'terms';
+type AppStep = 'home' | 'auth' | 'pricing' | 'setup' | 'interview' | 'summary' | 'privacy' | 'terms' | 'resume';
 
 export default function App() {
   const [step, setStep] = useState<AppStep>('home');
@@ -76,6 +82,11 @@ export default function App() {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [jobTitle, setJobTitle] = useState('');
   const [industry, setIndustry] = useState('');
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [resumeText, setResumeText] = useState('');
+  const [resumeUploadStatus, setResumeUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [resumeError, setResumeError] = useState('');
+  const [isDraggingResume, setIsDraggingResume] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -85,6 +96,49 @@ export default function App() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isTyping]);
+
+  const readFileAsText = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve((e.target?.result as string) || '');
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
+
+  const handleResumeFile = async (file: File) => {
+    const allowedExtensions = ['.pdf', '.doc', '.docx', '.txt'];
+    const dotIndex = file.name.lastIndexOf('.');
+    const ext = dotIndex !== -1 ? file.name.substring(dotIndex).toLowerCase() : '';
+    if (!ext || !allowedExtensions.includes(ext)) {
+      setResumeError('Invalid file type. Please upload a PDF, DOC, DOCX, or TXT file.');
+      setResumeUploadStatus('error');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setResumeError('File too large. Maximum size is 5MB.');
+      setResumeUploadStatus('error');
+      return;
+    }
+    setResumeError('');
+    setResumeUploadStatus('uploading');
+    try {
+      const text = await readFileAsText(file);
+      setResumeFile(file);
+      setResumeText(text);
+      setResumeUploadStatus('success');
+    } catch {
+      setResumeFile(file);
+      setResumeText('');
+      setResumeUploadStatus('success');
+    }
+  };
+
+  const removeResume = () => {
+    setResumeFile(null);
+    setResumeText('');
+    setResumeUploadStatus('idle');
+    setResumeError('');
+  };
 
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
@@ -144,8 +198,14 @@ export default function App() {
     setSessionsUsed(prev => prev + 1);
     setIsTyping(true);
     
+    const resumeContext = resumeText
+      ? `\n\nThe candidate has provided their resume. Use this information to ask more tailored questions:\n${resumeText.slice(0, RESUME_TEXT_MAX_LENGTH)}`
+      : resumeFile
+      ? `\n\nThe candidate has uploaded a resume file named "${resumeFile.name}". Reference this when asking experience-based questions.`
+      : '';
+
     const prompt = `You are a professional career coach and expert interviewer at EnvisionPaths. 
-    I am applying for the position of ${jobTitle} in the ${industry} industry. 
+    I am applying for the position of ${jobTitle} in the ${industry} industry.${resumeContext} 
     Please start the interview by introducing yourself briefly and asking the first interview question. 
     Keep your tone professional, encouraging, and insightful.`;
 
@@ -201,7 +261,7 @@ export default function App() {
           Conduct a realistic interview for a ${jobTitle} role. 
           After the user answers a question, briefly acknowledge their answer with a "Coach's Tip" (in italics) 
           and then move on to the next insightful interview question. 
-          Focus on behavioral, technical, and situational questions.`
+          Focus on behavioral, technical, and situational questions.${resumeText ? `\n\nCandidate resume context:\n${resumeText.slice(0, RESUME_TEXT_MAX_LENGTH)}` : ''}`
         }
       });
 
@@ -241,6 +301,18 @@ export default function App() {
                   className="text-xs font-black uppercase tracking-widest text-white bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md border border-white/20 transition-all shadow-lg shadow-red-900/20"
                 >
                   End Session
+                </button>
+              )}
+              {step !== 'interview' && (
+                <button
+                  onClick={() => setStep('resume')}
+                  className={`flex items-center gap-1.5 text-xs font-black uppercase tracking-widest transition-colors ${step === 'resume' ? 'text-red-400' : 'text-white/60 hover:text-red-400'}`}
+                  aria-label={resumeFile ? 'Resume uploaded — manage resume' : 'Manage Resume'}
+                  title={resumeFile ? 'Resume uploaded — manage resume' : 'Manage Resume'}
+                >
+                  <Paperclip size={16} aria-hidden="true" />
+                  <span className="hidden sm:inline">Resume</span>
+                  {resumeFile && <CheckCircle2 size={13} className="text-red-500" aria-hidden="true" />}
                 </button>
               )}
               <button 
@@ -604,6 +676,28 @@ export default function App() {
                     </select>
                   </div>
 
+                  {/* Resume callout */}
+                  <div
+                    onClick={() => setStep('resume')}
+                    className="flex items-center justify-between px-5 py-4 bg-zinc-900/70 border border-white/10 rounded-2xl cursor-pointer hover:border-red-600/50 transition-colors group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <FileText size={20} className="text-zinc-500 group-hover:text-red-400 transition-colors" />
+                      <div>
+                        <p className="text-sm font-bold text-white">
+                          {resumeFile ? resumeFile.name : 'Upload Your Resume'}
+                        </p>
+                        <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+                          {resumeFile ? 'Resume uploaded — click to update' : 'Optional · Personalizes your interview'}
+                        </p>
+                      </div>
+                    </div>
+                    {resumeFile
+                      ? <CheckCircle2 size={18} className="text-red-500 flex-shrink-0" />
+                      : <ChevronRight size={18} className="text-zinc-600 group-hover:text-red-400 transition-colors flex-shrink-0" />
+                    }
+                  </div>
+
                   <button 
                     onClick={startInterview}
                     disabled={!jobTitle}
@@ -704,6 +798,135 @@ export default function App() {
                     <div className="w-1.5 h-1.5 rounded-full bg-red-600/40" />
                   </div>
                 </div>
+              </div>
+            </motion.div>
+          ) : step === 'resume' ? (
+            <motion.div
+              key="resume"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="max-w-2xl mx-auto mt-12 mb-20"
+            >
+              <div className="bg-zinc-900/50 border border-white/10 p-10 rounded-3xl backdrop-blur-xl shadow-2xl">
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="w-14 h-14 bg-red-600 rounded-2xl flex items-center justify-center shadow-lg shadow-red-900/40 border border-white/20">
+                    <FileText size={28} />
+                  </div>
+                  <div>
+                    <h2 className="text-3xl font-black tracking-tighter uppercase italic">Your Resume</h2>
+                    <p className="text-zinc-400 text-sm mt-0.5">Upload to personalize your interview coaching</p>
+                  </div>
+                </div>
+
+                {/* Upload zone */}
+                {!resumeFile ? (
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setIsDraggingResume(true); }}
+                    onDragLeave={() => setIsDraggingResume(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIsDraggingResume(false);
+                      const file = e.dataTransfer.files[0];
+                      if (file) handleResumeFile(file);
+                    }}
+                    className={`relative border-2 border-dashed rounded-2xl p-12 text-center transition-colors ${
+                      isDraggingResume
+                        ? 'border-red-600 bg-red-600/5'
+                        : 'border-white/20 hover:border-red-600/50 bg-black/30'
+                    }`}
+                  >
+                    <Upload size={40} className="mx-auto mb-4 text-zinc-500" />
+                    <p className="text-white font-bold mb-1">Drag & drop your resume here</p>
+                    <p className="text-zinc-500 text-sm mb-6">PDF, DOC, DOCX, or TXT — max 5MB</p>
+                    <label className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest text-xs px-6 py-3 rounded-xl cursor-pointer transition-all border border-white/20 shadow-lg shadow-red-900/20">
+                      <Upload size={14} />
+                      Choose File
+                      <input
+                        type="file"
+                        accept=".pdf,.doc,.docx,.txt"
+                        className="sr-only"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleResumeFile(file);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <div className="border border-white/10 rounded-2xl p-6 bg-black/30">
+                    {resumeUploadStatus === 'uploading' ? (
+                      <div className="flex items-center gap-4 py-4 justify-center">
+                        <RefreshCw size={22} className="text-red-600 animate-spin" />
+                        <p className="text-zinc-400 font-bold uppercase tracking-widest text-xs">Processing…</p>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-red-600/10 border border-red-600/30 rounded-xl flex items-center justify-center flex-shrink-0">
+                          <FileText size={22} className="text-red-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-white truncate">{resumeFile.name}</p>
+                          <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mt-0.5">
+                            {(resumeFile.size / 1024).toFixed(0)} KB · Uploaded successfully
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <CheckCircle2 size={20} className="text-red-500" />
+                          <button
+                            onClick={removeResume}
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-white hover:bg-zinc-700 transition-colors"
+                            title="Remove resume"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Replace file option when already uploaded */}
+                {resumeFile && resumeUploadStatus === 'success' && (
+                  <label className="mt-4 flex items-center justify-center gap-2 text-xs text-zinc-500 hover:text-red-400 transition-colors cursor-pointer uppercase tracking-widest font-bold">
+                    <Upload size={12} />
+                    Replace file
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.txt"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleResumeFile(file);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                )}
+
+                {/* Error message */}
+                {resumeError && (
+                  <div className="mt-4 flex items-center gap-3 bg-red-600/10 border border-red-600/30 px-4 py-3 rounded-xl">
+                    <X size={16} className="text-red-500 flex-shrink-0" />
+                    <p className="text-red-400 text-sm">{resumeError}</p>
+                  </div>
+                )}
+
+                {/* Info note */}
+                <div className="mt-6 bg-zinc-900/70 border border-white/5 rounded-xl px-5 py-4">
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">
+                    Your resume is stored locally in your session and shared only with the AI coach to tailor interview questions and feedback. It is not saved to any server.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setStep('setup')}
+                  className="mt-8 w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-white font-black uppercase tracking-widest rounded-xl border border-white/10 transition-all flex items-center justify-center gap-2"
+                >
+                  <ChevronRight size={16} />
+                  Continue to Setup
+                </button>
               </div>
             </motion.div>
           ) : (
