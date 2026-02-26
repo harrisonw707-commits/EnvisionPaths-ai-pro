@@ -1,34 +1,15 @@
-@import "tailwindcss";
-
-@theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --color-brand-purple: #9333ea;
-  --color-brand-black: #000000;
+:root {
+  --color-brand-purple: #dc2626; /* Changed to red */
 }
 
-@layer utilities {
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
-  }
-  .scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-  .bg-dark-gradient {
-    background: linear-gradient(180deg, #1a1a1a 0%, #000000 100%);
-  }
-  .border-white-trim {
-    border: 1px solid rgba(255, 255, 255, 0.2);
-  }
-  .text-glow-purple {
-    text-shadow: 0 0 15px rgba(147, 51, 234, 0.5);
-  }
+.text-glow-purple {
+  text-shadow: 0 0 5px #dc2626, 0 0 10px #dc2626; /* Changed to red shadow */
 }
 
-body {
-  @apply bg-black text-white antialiased;
+.focus\:border-purple-600:focus {
+  border-color: #dc2626; /* Changed to red */
 }
 
-input, select {
-  @apply bg-zinc-900 border-zinc-800 text-white focus:border-purple-600 focus:ring-purple-600 transition-all;
+.focus\:ring-purple-600:focus {
+  ring-color: #dc2626; /* Changed to red */
 }
