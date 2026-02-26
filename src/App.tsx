@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
+import './App.css';
 import { 
   Briefcase, 
   MessageSquare, 
@@ -23,8 +24,32 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-// Initialize Gemini
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const featureCards = [
+  {
+    icon: '⚡',
+    title: 'Fast',
+    description: 'Lightning-fast AI responses powered by Google Gemini for real-time career coaching and interview practice.',
+  },
+  {
+    icon: '✨',
+    title: 'Beautiful',
+    description: 'Elegant, modern UI designed to keep you focused and motivated throughout your career development journey.',
+  },
+  {
+    icon: '🚀',
+    title: 'Powerful',
+    description: 'Advanced AI capabilities to analyze your performance, generate personalized feedback, and accelerate your growth.',
+  },
+];
+
+// Initialize Gemini lazily to avoid crashing when API key is absent
+let genAI: GoogleGenAI | null = null;
+function getGenAI(): GoogleGenAI {
+  if (!genAI) {
+    genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+  }
+  return genAI;
+}
 
 interface Message {
   role: 'user' | 'model';
@@ -32,10 +57,10 @@ interface Message {
   timestamp: Date;
 }
 
-type AppStep = 'auth' | 'pricing' | 'setup' | 'interview' | 'summary' | 'privacy' | 'terms';
+type AppStep = 'home' | 'auth' | 'pricing' | 'setup' | 'interview' | 'summary' | 'privacy' | 'terms';
 
 export default function App() {
-  const [step, setStep] = useState<AppStep>('auth');
+  const [step, setStep] = useState<AppStep>('home');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [selectedPlan, setSelectedPlan] = useState<'pro' | 'elite' | null>(null);
   const [sessionsUsed, setSessionsUsed] = useState(0);
@@ -88,7 +113,7 @@ export default function App() {
       Interview Transcript:
       ${conversation}`;
 
-      const response = await genAI.models.generateContent({
+      const response = await getGenAI().models.generateContent({
         model: "gemini-1.5-flash",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
       });
@@ -120,7 +145,7 @@ export default function App() {
     Keep your tone professional, encouraging, and insightful.`;
 
     try {
-      const model = genAI.models.generateContent({
+      const model = getGenAI().models.generateContent({
         model: "gemini-1.5-flash",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
       });
@@ -160,7 +185,7 @@ export default function App() {
         parts: [{ text: m.text }]
       }));
 
-      const response = await genAI.models.generateContent({
+      const response = await getGenAI().models.generateContent({
         model: "gemini-1.5-flash",
         contents: [
           ...history,
@@ -189,33 +214,33 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-black font-sans text-white selection:bg-red-600 selection:text-white">
+    <div className="min-h-screen bg-black font-sans text-white selection:bg-purple-600 selection:text-white">
       {/* Header */}
       <header className="sticky top-0 z-10 bg-black/80 backdrop-blur-md border-b border-white/10 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-red-600 rounded-lg flex items-center justify-center text-white shadow-[0_0_20px_rgba(220,38,38,0.3)] border border-white/20">
+            <div className="w-10 h-10 bg-purple-600 rounded-lg flex items-center justify-center text-white shadow-[0_0_20px_rgba(147,51,234,0.3)] border border-white/20">
               <Target size={24} />
             </div>
             <div>
-              <h1 className="text-xl font-black tracking-tighter text-white uppercase italic">EnvisionPaths</h1>
-              <p className="text-[10px] font-bold text-red-500 uppercase tracking-[0.2em]">Elite Career Coaching</p>
+              <h1 className="text-xl font-black tracking-tighter text-white uppercase italic">EnvisionPaths AI</h1>
+              <p className="text-[10px] font-bold text-purple-400 uppercase tracking-[0.2em]">Elite Career Coaching</p>
             </div>
           </div>
           
-          {step !== 'auth' && (
+          {step !== 'home' && step !== 'auth' && (
             <div className="flex items-center gap-4">
               {step === 'interview' && (
                 <button 
                   onClick={endInterview}
-                  className="text-xs font-black uppercase tracking-widest text-white bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md border border-white/20 transition-all shadow-lg shadow-red-900/20"
+                  className="text-xs font-black uppercase tracking-widest text-white bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-md border border-white/20 transition-all shadow-lg shadow-purple-900/20"
                 >
                   End Session
                 </button>
               )}
               <button 
-                onClick={() => setStep('auth')}
-                className="text-white/60 hover:text-red-500 transition-colors"
+                onClick={() => setStep('home')}
+                className="text-white/60 hover:text-purple-400 transition-colors"
                 title="Logout"
               >
                 <LogOut size={20} />
@@ -227,7 +252,36 @@ export default function App() {
 
       <main className="max-w-5xl mx-auto p-6">
         <AnimatePresence mode="wait">
-          {step === 'auth' ? (
+          {step === 'home' ? (
+            <motion.div
+              key="home"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="app-home"
+            >
+              <div className="text-center mb-16">
+                <h2 className="welcome-heading">Welcome to EnvisionPaths AI</h2>
+                <p className="welcome-tagline">Build amazing applications with AI Studio</p>
+                <button
+                  onClick={() => setStep('auth')}
+                  className="mt-8 inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-black uppercase tracking-[0.2em] px-10 py-5 rounded-2xl transition-all shadow-lg shadow-purple-900/30 border border-white/20"
+                >
+                  Get Started <ArrowRight size={18} />
+                </button>
+              </div>
+
+              <div className="feature-cards">
+                {featureCards.map((card) => (
+                  <div key={card.title} className="feature-card">
+                    <span className="feature-card-icon">{card.icon}</span>
+                    <h3 className="feature-card-title">{card.title}</h3>
+                    <p className="feature-card-desc">{card.description}</p>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          ) : step === 'auth' ? (
             <motion.div 
               key="auth"
               initial={{ opacity: 0, scale: 0.95 }}
@@ -253,7 +307,7 @@ export default function App() {
                         type="email" 
                         required
                         placeholder="name@company.com"
-                        className="w-full pl-12 pr-4 py-4 bg-black border border-white/10 rounded-xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-sm"
+                        className="w-full pl-12 pr-4 py-4 bg-black border border-white/10 rounded-xl focus:border-purple-600 focus:ring-1 focus:ring-purple-600 outline-none transition-all text-sm"
                       />
                     </div>
                   </div>
@@ -266,14 +320,14 @@ export default function App() {
                         type="password" 
                         required
                         placeholder="••••••••"
-                        className="w-full pl-12 pr-4 py-4 bg-black border border-white/10 rounded-xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-sm"
+                        className="w-full pl-12 pr-4 py-4 bg-black border border-white/10 rounded-xl focus:border-purple-600 focus:ring-1 focus:ring-purple-600 outline-none transition-all text-sm"
                       />
                     </div>
                   </div>
 
                   <button 
                     type="submit"
-                    className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] py-5 rounded-xl transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2 border border-white/20 group"
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white font-black uppercase tracking-[0.2em] py-5 rounded-xl transition-all shadow-lg shadow-purple-900/20 flex items-center justify-center gap-2 border border-white/20 group"
                   >
                     {authMode === 'login' ? 'Sign In' : 'Create Account'}
                     <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
@@ -283,7 +337,7 @@ export default function App() {
                 <div className="mt-8 text-center space-y-4">
                   <button 
                     onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
-                    className="text-xs text-zinc-500 hover:text-red-500 transition-colors block w-full"
+                    className="text-xs text-zinc-500 hover:text-purple-400 transition-colors block w-full"
                   >
                     {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
                   </button>
@@ -313,7 +367,7 @@ export default function App() {
               className="max-w-3xl mx-auto mt-12 mb-20"
             >
               <div className="bg-zinc-900/50 border border-white/10 p-12 rounded-3xl backdrop-blur-xl shadow-2xl">
-                <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-8 border-b border-red-600 pb-4">Privacy Policy</h2>
+                <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-8 border-b border-purple-600 pb-4">Privacy Policy</h2>
                 
                 <div className="space-y-8 text-zinc-400 text-sm leading-relaxed">
                   <section>
@@ -354,7 +408,7 @@ export default function App() {
               className="max-w-3xl mx-auto mt-12 mb-20"
             >
               <div className="bg-zinc-900/50 border border-white/10 p-12 rounded-3xl backdrop-blur-xl shadow-2xl">
-                <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-8 border-b border-red-600 pb-4">Terms of Service</h2>
+                <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-8 border-b border-purple-600 pb-4">Terms of Service</h2>
                 
                 <div className="space-y-8 text-zinc-400 text-sm leading-relaxed">
                   <section>
@@ -407,7 +461,7 @@ export default function App() {
 
               <div className="grid md:grid-cols-2 gap-8">
                 {/* Pro Tier */}
-                <div className="bg-zinc-900/50 border border-white/10 p-10 rounded-3xl backdrop-blur-sm flex flex-col hover:border-red-600/50 transition-all group">
+                <div className="bg-zinc-900/50 border border-white/10 p-10 rounded-3xl backdrop-blur-sm flex flex-col hover:border-purple-600/50 transition-all group">
                   <div className="mb-8">
                     <h3 className="text-2xl font-black uppercase italic mb-2">Pro</h3>
                     <div className="flex items-baseline gap-1">
@@ -418,15 +472,15 @@ export default function App() {
                   
                   <ul className="space-y-4 mb-10 flex-1">
                     <li className="flex items-center gap-3 text-zinc-300 text-sm">
-                      <CheckCircle2 size={18} className="text-red-600" />
+                      <CheckCircle2 size={18} className="text-purple-600" />
                       Unlimited Mock Interviews
                     </li>
                     <li className="flex items-center gap-3 text-zinc-300 text-sm">
-                      <CheckCircle2 size={18} className="text-red-600" />
+                      <CheckCircle2 size={18} className="text-purple-600" />
                       Standard AI Feedback
                     </li>
                     <li className="flex items-center gap-3 text-zinc-300 text-sm">
-                      <CheckCircle2 size={18} className="text-red-600" />
+                      <CheckCircle2 size={18} className="text-purple-600" />
                       Email Support
                     </li>
                   </ul>
@@ -440,13 +494,13 @@ export default function App() {
                 </div>
 
                 {/* Elite Tier */}
-                <div className="bg-zinc-900 border-2 border-red-600 p-10 rounded-3xl backdrop-blur-sm flex flex-col relative shadow-[0_0_40px_rgba(220,38,38,0.15)]">
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-red-600 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.2em] text-white border border-white/20">
+                <div className="bg-zinc-900 border-2 border-purple-600 p-10 rounded-3xl backdrop-blur-sm flex flex-col relative shadow-[0_0_40px_rgba(147,51,234,0.15)]">
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-purple-600 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.2em] text-white border border-white/20">
                     Recommended
                   </div>
                   
                   <div className="mb-8">
-                    <h3 className="text-2xl font-black uppercase italic mb-2 text-red-500">Elite</h3>
+                    <h3 className="text-2xl font-black uppercase italic mb-2 text-purple-500">Elite</h3>
                     <div className="flex items-baseline gap-1">
                       <span className="text-4xl font-black">$19.99</span>
                       <span className="text-zinc-500 text-sm uppercase font-bold tracking-widest">/ month</span>
@@ -455,26 +509,26 @@ export default function App() {
                   
                   <ul className="space-y-4 mb-10 flex-1">
                     <li className="flex items-center gap-3 text-white text-sm font-bold">
-                      <CheckCircle2 size={18} className="text-red-600" />
+                      <CheckCircle2 size={18} className="text-purple-600" />
                       Everything in Pro
                     </li>
                     <li className="flex items-center gap-3 text-white text-sm font-bold">
-                      <CheckCircle2 size={18} className="text-red-600" />
+                      <CheckCircle2 size={18} className="text-purple-600" />
                       Advanced Performance Analysis
                     </li>
                     <li className="flex items-center gap-3 text-white text-sm font-bold">
-                      <CheckCircle2 size={18} className="text-red-600" />
+                      <CheckCircle2 size={18} className="text-purple-600" />
                       Video Simulation Mode
                     </li>
                     <li className="flex items-center gap-3 text-white text-sm font-bold">
-                      <CheckCircle2 size={18} className="text-red-600" />
+                      <CheckCircle2 size={18} className="text-purple-600" />
                       Priority Coach Access
                     </li>
                   </ul>
 
                   <button 
                     onClick={() => selectPlan('elite')}
-                    className="w-full py-4 bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest rounded-xl border border-white/20 transition-all shadow-lg shadow-red-900/40"
+                    className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white font-black uppercase tracking-widest rounded-xl border border-white/20 transition-all shadow-lg shadow-purple-900/40"
                   >
                     Go Elite
                   </button>
@@ -503,8 +557,8 @@ export default function App() {
                 <div className="flex items-center justify-between mb-10">
                   <p className="text-zinc-400 leading-relaxed">The interview is your arena. Define your target and let's begin the simulation.</p>
                   {!selectedPlan && (
-                    <div className="bg-red-600/10 border border-red-600/20 px-3 py-1 rounded-full">
-                      <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest">
+                    <div className="bg-purple-600/10 border border-purple-600/20 px-3 py-1 rounded-full">
+                      <p className="text-[10px] font-bold text-purple-500 uppercase tracking-widest">
                         Sessions: {sessionsUsed}/2
                       </p>
                     </div>
@@ -513,7 +567,7 @@ export default function App() {
                 
                 <div className="space-y-8">
                   <div className="space-y-3">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-red-500 ml-1">Target Position</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-purple-500 ml-1">Target Position</label>
                     <div className="relative">
                       <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
                       <input 
@@ -521,17 +575,17 @@ export default function App() {
                         placeholder="e.g. Director of Engineering"
                         value={jobTitle}
                         onChange={(e) => setJobTitle(e.target.value)}
-                        className="w-full pl-12 pr-4 py-5 bg-black border border-white/10 rounded-2xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-lg font-medium"
+                        className="w-full pl-12 pr-4 py-5 bg-black border border-white/10 rounded-2xl focus:border-purple-600 focus:ring-1 focus:ring-purple-600 outline-none transition-all text-lg font-medium"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-3">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-red-500 ml-1">Industry Sector</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-purple-500 ml-1">Industry Sector</label>
                     <select 
                       value={industry}
                       onChange={(e) => setIndustry(e.target.value)}
-                      className="w-full px-6 py-5 bg-black border border-white/10 rounded-2xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-lg appearance-none"
+                      className="w-full px-6 py-5 bg-black border border-white/10 rounded-2xl focus:border-purple-600 focus:ring-1 focus:ring-purple-600 outline-none transition-all text-lg appearance-none"
                     >
                       <option value="">Select Sector</option>
                       <option value="Technology">Technology</option>
@@ -545,7 +599,7 @@ export default function App() {
                   <button 
                     onClick={startInterview}
                     disabled={!jobTitle}
-                    className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.3em] py-6 rounded-2xl shadow-xl shadow-red-900/20 transition-all flex items-center justify-center gap-3 border border-white/20 group"
+                    className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-30 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.3em] py-6 rounded-2xl shadow-xl shadow-purple-900/20 transition-all flex items-center justify-center gap-3 border border-white/20 group"
                   >
                     Initialize Simulation
                     <ChevronRight size={24} className="group-hover:translate-x-1 transition-transform" />
@@ -553,16 +607,16 @@ export default function App() {
                 </div>
 
                 <div className="mt-16 grid grid-cols-3 gap-6">
-                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-600/50 transition-colors">
-                    <Award className="mx-auto text-red-600 mb-3" size={28} />
+                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-purple-600/50 transition-colors">
+                    <Award className="mx-auto text-purple-600 mb-3" size={28} />
                     <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest group-hover:text-white transition-colors">Elite Tips</p>
                   </div>
-                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-600/50 transition-colors">
-                    <CheckCircle2 className="mx-auto text-red-600 mb-3" size={28} />
+                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-purple-600/50 transition-colors">
+                    <CheckCircle2 className="mx-auto text-purple-600 mb-3" size={28} />
                     <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest group-hover:text-white transition-colors">Performance</p>
                   </div>
-                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-600/50 transition-colors">
-                    <MessageSquare className="mx-auto text-red-600 mb-3" size={28} />
+                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-purple-600/50 transition-colors">
+                    <MessageSquare className="mx-auto text-purple-600 mb-3" size={28} />
                     <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest group-hover:text-white transition-colors">Real-Time</p>
                   </div>
                 </div>
@@ -586,13 +640,13 @@ export default function App() {
                   >
                     <div className={`max-w-[85%] flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                       <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 border ${
-                        msg.role === 'user' ? 'bg-red-600 border-white/20' : 'bg-zinc-900 border-white/10'
+                        msg.role === 'user' ? 'bg-purple-600 border-white/20' : 'bg-zinc-900 border-white/10'
                       }`}>
-                        {msg.role === 'user' ? <User size={20} /> : <Bot size={20} className="text-red-500" />}
+                        {msg.role === 'user' ? <User size={20} /> : <Bot size={20} className="text-purple-500" />}
                       </div>
                       <div className={`p-6 rounded-2xl shadow-lg ${
                         msg.role === 'user' 
-                          ? 'bg-zinc-900 border border-red-600/50 text-white rounded-tr-none' 
+                          ? 'bg-zinc-900 border border-purple-600/50 text-white rounded-tr-none' 
                           : 'bg-zinc-900/50 border border-white/10 text-zinc-200 rounded-tl-none'
                       }`}>
                         <p className="text-base leading-relaxed whitespace-pre-wrap font-medium">{msg.text}</p>
@@ -606,9 +660,9 @@ export default function App() {
                 {isTyping && (
                   <div className="flex justify-start">
                     <div className="bg-zinc-900 border border-white/10 p-5 rounded-2xl rounded-tl-none shadow-sm flex gap-2 items-center">
-                      <div className="w-2 h-2 bg-red-600 rounded-full animate-bounce" />
-                      <div className="w-2 h-2 bg-red-600 rounded-full animate-bounce [animation-delay:0.2s]" />
-                      <div className="w-2 h-2 bg-red-600 rounded-full animate-bounce [animation-delay:0.4s]" />
+                      <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce" />
+                      <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce [animation-delay:0.2s]" />
+                      <div className="w-2 h-2 bg-purple-600 rounded-full animate-bounce [animation-delay:0.4s]" />
                     </div>
                   </div>
                 )}
@@ -622,12 +676,12 @@ export default function App() {
                     placeholder="Provide your response..."
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    className="w-full pl-8 pr-20 py-6 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-lg"
+                    className="w-full pl-8 pr-20 py-6 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl focus:border-purple-600 focus:ring-1 focus:ring-purple-600 outline-none transition-all text-lg"
                   />
                   <button 
                     type="submit"
                     disabled={!input.trim() || isTyping}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-12 h-12 bg-red-600 text-white rounded-xl flex items-center justify-center hover:bg-red-700 disabled:opacity-30 transition-all shadow-lg shadow-red-900/20 border border-white/20"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-12 h-12 bg-purple-600 text-white rounded-xl flex items-center justify-center hover:bg-purple-700 disabled:opacity-30 transition-all shadow-lg shadow-purple-900/20 border border-white/20"
                   >
                     <Send size={22} />
                   </button>
@@ -637,9 +691,9 @@ export default function App() {
                     EnvisionPaths Intelligence Simulation
                   </p>
                   <div className="flex gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
-                    <div className="w-1.5 h-1.5 rounded-full bg-red-600/40" />
-                    <div className="w-1.5 h-1.5 rounded-full bg-red-600/40" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-purple-600 animate-pulse" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-purple-600/40" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-purple-600/40" />
                   </div>
                 </div>
               </div>
@@ -652,30 +706,30 @@ export default function App() {
               className="max-w-3xl mx-auto mt-8"
             >
               <div className="bg-zinc-900 border border-white/10 rounded-3xl p-12 shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-96 h-96 bg-red-600/5 rounded-full -mr-48 -mt-48 blur-3xl" />
+                <div className="absolute top-0 right-0 w-96 h-96 bg-purple-600/5 rounded-full -mr-48 -mt-48 blur-3xl" />
                 
                 <div className="relative z-10">
                   <div className="flex items-center gap-6 mb-12">
-                    <div className="w-20 h-20 bg-red-600 text-white rounded-2xl flex items-center justify-center shadow-2xl shadow-red-900/40 border border-white/20">
+                    <div className="w-20 h-20 bg-purple-600 text-white rounded-2xl flex items-center justify-center shadow-2xl shadow-purple-900/40 border border-white/20">
                       <Award size={40} />
                     </div>
                     <div>
                       <h2 className="text-4xl font-black tracking-tighter uppercase italic">Performance Report</h2>
-                      <p className="text-red-500 font-bold uppercase tracking-widest text-xs mt-1">{jobTitle}</p>
+                      <p className="text-purple-500 font-bold uppercase tracking-widest text-xs mt-1">{jobTitle}</p>
                     </div>
                   </div>
 
                   {isGeneratingSummary ? (
                     <div className="space-y-8 py-20">
                       <div className="flex flex-col items-center justify-center gap-6">
-                        <RefreshCw className="text-red-600 animate-spin" size={64} />
+                        <RefreshCw className="text-purple-600 animate-spin" size={64} />
                         <p className="text-zinc-400 font-black uppercase tracking-[0.3em] animate-pulse">Processing Simulation Data</p>
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-10">
                       <div className="prose prose-invert max-w-none">
-                        <div className="whitespace-pre-wrap text-zinc-300 leading-relaxed text-lg font-medium border-l-2 border-red-600 pl-8">
+                        <div className="whitespace-pre-wrap text-zinc-300 leading-relaxed text-lg font-medium border-l-2 border-purple-600 pl-8">
                           {summary}
                         </div>
                       </div>
@@ -687,7 +741,7 @@ export default function App() {
                             setMessages([]);
                             setSummary('');
                           }}
-                          className="flex-1 bg-red-600 text-white font-black uppercase tracking-[0.3em] py-6 rounded-2xl shadow-xl shadow-red-900/40 hover:bg-red-700 transition-all border border-white/20"
+                          className="flex-1 bg-purple-600 text-white font-black uppercase tracking-[0.3em] py-6 rounded-2xl shadow-xl shadow-purple-900/40 hover:bg-purple-700 transition-all border border-white/20"
                         >
                           New Simulation
                         </button>

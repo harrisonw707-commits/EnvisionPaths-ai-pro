@@ -2,7 +2,7 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --color-brand-red: #DC2626;
+  --color-brand-purple: #9333ea;
   --color-brand-black: #000000;
 }
 
@@ -20,8 +20,8 @@
   .border-white-trim {
     border: 1px solid rgba(255, 255, 255, 0.2);
   }
-  .text-glow-red {
-    text-shadow: 0 0 15px rgba(220, 38, 38, 0.5);
+  .text-glow-purple {
+    text-shadow: 0 0 15px rgba(147, 51, 234, 0.5);
   }
 }
 
@@ -30,5 +30,5 @@ body {
 }
 
 input, select {
-  @apply bg-zinc-900 border-zinc-800 text-white focus:border-red-600 focus:ring-red-600 transition-all;
+  @apply bg-zinc-900 border-zinc-800 text-white focus:border-purple-600 focus:ring-purple-600 transition-all;
 }
