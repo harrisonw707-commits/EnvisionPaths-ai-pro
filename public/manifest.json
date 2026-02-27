@@ -1,6 +1,8 @@
 {
+  "id": "/",
   "short_name": "EnvisionPath",
   "name": "EnvisionPath: Interview Pro",
+  "description": "AI-powered interview preparation platform designed to simulate real interviews, build confidence, and help users land better opportunities.",
   "icons": [
     {
       "src": "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
@@ -9,8 +11,18 @@
       "purpose": "any maskable"
     }
   ],
-  "start_url": ".",
+  "screenshots": [
+    {
+      "src": "/screenshots/home.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "theme_color": "#020617",
-  "background_color": "#020617"
+  "background_color": "#020617",
+  "categories": ["education", "business"]
 }
