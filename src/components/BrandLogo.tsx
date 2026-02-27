@@ -9,40 +9,40 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({ size = 32, className = "" 
   return (
     <svg 
       width={size} 
-      height={size * 0.2} 
-      viewBox="0 0 600 120" 
+      height={size * 0.25} 
+      viewBox="0 0 500 120" 
       fill="none" 
       xmlns="http://www.w3.org/2000/svg"
       className={className}
     >
-      {/* ENVISION text */}
+      {/* HIREME text */}
       <text 
         x="0" 
         y="85" 
         fill="white" 
-        style={{ font: '900 72px sans-serif', letterSpacing: '-1px' }}
+        style={{ font: '900 72px sans-serif', letterSpacing: '-2px' }}
       >
-        ENVISION
+        HIREME
       </text>
       
-      {/* PATHS text */}
+      {/* AI text */}
       <text 
-        x="380" 
+        x="300" 
         y="85" 
-        fill="#DC2626" 
-        style={{ font: '900 72px sans-serif', letterSpacing: '-1px' }}
+        fill="#facc15" 
+        style={{ font: '900 72px sans-serif', letterSpacing: '-2px' }}
       >
-        PATHS
+        AI
       </text>
 
-      {/* Red Arrow Swoosh - Positioned over the 'I' in ENVISION */}
+      {/* Yellow Arrow Swoosh - Positioned over the 'M' area */}
       <path 
-        d="M235 85 C235 85 245 40 285 15 L270 35 L295 15 L275 5 L285 15 Z" 
-        fill="#DC2626" 
+        d="M225 85 C225 85 235 40 275 15 L260 35 L285 15 L265 5 L275 15 Z" 
+        fill="#facc15" 
       />
       
-      {/* Bottom Red Line */}
-      <rect x="0" y="110" width="600" height="6" fill="#DC2626" />
+      {/* Bottom Yellow Line */}
+      <rect x="0" y="110" width="500" height="6" fill="#facc15" />
     </svg>
   );
 };
@@ -50,7 +50,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({ size = 32, className = "" 
 export const BrandLogoText: React.FC = () => {
   return (
     <div className="flex items-center">
-      <BrandLogo size={280} className="drop-shadow-[0_0_15px_rgba(220,38,38,0.4)]" />
+      <BrandLogo size={240} className="drop-shadow-[0_0_15px_rgba(250,204,21,0.4)]" />
     </div>
   );
 };

@@ -1,89 +1,16 @@
 {
-  "name": "EnvisionPaths - AI Career Coaching",
-  "short_name": "EnvisionPaths",
-  "description": "Real interview practice powered by AI. Get personalized coaching from an intelligent interview coach.",
-  "start_url": "/",
-  "scope": "/",
-  "display": "standalone",
-  "orientation": "portrait-primary",
-  "theme_color": "#dc2626",
-  "background_color": "#0f0f0f",
-  "categories": ["productivity", "business", "education"],
+  "short_name": "EnvisionPath",
+  "name": "EnvisionPath: Interview Pro",
   "icons": [
     {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-512.png",
+      "src": "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-maskable.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     }
   ],
-  "screenshots": [
-    {
-      "src": "/screenshot-desktop.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "form_factor": "wide",
-      "label": "EnvisionPaths AI Career Coaching - Desktop"
-    },
-    {
-      "src": "/screenshot-mobile.png",
-      "sizes": "390x844",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "EnvisionPaths AI Career Coaching - Mobile"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "Start Interview",
-      "short_name": "Interview",
-      "description": "Quick access to interview setup",
-      "url": "/?shortcut=interview",
-      "icons": [
-        {
-          "src": "/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "View Resume",
-      "short_name": "Resume",
-      "description": "Quick access to resume management",
-      "url": "/?shortcut=resume",
-      "icons": [
-        {
-          "src": "/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Pricing",
-      "short_name": "Pricing",
-      "description": "Quick access to pricing/billing",
-      "url": "/?shortcut=pricing",
-      "icons": [
-        {
-          "src": "/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    }
-  ]
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#020617",
+  "background_color": "#020617"
 }
