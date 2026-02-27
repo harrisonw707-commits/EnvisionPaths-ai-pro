@@ -34,7 +34,7 @@ interface Message {
   timestamp: Date;
 }
 
-type AppStep = 'auth' | 'pricing' | 'setup' | 'interview' | 'summary' | 'privacy' | 'terms';
+type AppStep = 'auth' | 'pricing' | 'setup' | 'interview' | 'summary';
 
 export default function App() {
   const [step, setStep] = useState<AppStep>('auth');
@@ -85,11 +85,13 @@ export default function App() {
     try {
       const conversation = messages.map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n\n');
       const prompt = `As an expert career coach at EnvisionPaths, analyze the following mock interview for a ${jobTitle} role. 
-      Provide a comprehensive summary including:
+      ${!selectedPlan ? 'Provide a brief, standard summary including a score and 2 key points.' : 'Provide a comprehensive, advanced performance analysis including:'}
+      ${selectedPlan ? `
       1. Overall Performance Score (out of 10)
       2. Key Strengths (3 points)
       3. Areas for Improvement (3 points)
       4. A final encouraging "Roadmap to Success" for this candidate.
+      ` : ''}
       
       Format the response clearly with headings.
       
@@ -161,6 +163,7 @@ export default function App() {
 
       const systemInstruction = `You are an expert career coach at EnvisionPaths. 
       Conduct a realistic interview for a ${jobTitle} role. 
+      ${!selectedPlan ? 'This is a free trial session, so keep the interview concise (max 5 questions total).' : ''}
       After the user answers a question, briefly acknowledge their answer with a "Coach's Tip" (in italics) 
       and then move on to the next insightful interview question. 
       Focus on behavioral, technical, and situational questions.`;
@@ -382,7 +385,47 @@ export default function App() {
                 </p>
               </div>
 
-              <div className="grid md:grid-cols-2 gap-8">
+              <div className="grid lg:grid-cols-3 gap-8">
+                {/* Free Tier */}
+                <div className="bg-zinc-900/30 border border-white/5 p-10 rounded-3xl backdrop-blur-sm flex flex-col hover:border-zinc-700 transition-all group">
+                  <div className="mb-8">
+                    <h3 className="text-2xl font-black uppercase italic mb-2 text-zinc-400">Free</h3>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-4xl font-black">$0</span>
+                      <span className="text-zinc-500 text-sm uppercase font-bold tracking-widest">/ month</span>
+                    </div>
+                  </div>
+                  
+                  <ul className="space-y-4 mb-10 flex-1">
+                    <li className="flex items-center gap-3 text-zinc-400 text-sm">
+                      <CheckCircle2 size={18} className="text-zinc-600" />
+                      2 Mock Interviews / mo
+                    </li>
+                    <li className="flex items-center gap-3 text-zinc-400 text-sm">
+                      <CheckCircle2 size={18} className="text-zinc-600" />
+                      Basic AI Feedback
+                    </li>
+                    <li className="flex items-center gap-3 text-zinc-400 text-sm">
+                      <CheckCircle2 size={18} className="text-zinc-600" />
+                      Community Access
+                    </li>
+                  </ul>
+
+                  <button 
+                    onClick={() => {
+                      setSelectedPlan(null);
+                      setStep('setup');
+                    }}
+                    className={`w-full py-4 font-black uppercase tracking-widest rounded-xl border transition-all ${
+                      !selectedPlan 
+                        ? 'bg-zinc-800 text-white border-white/20' 
+                        : 'bg-transparent text-zinc-500 border-white/5 hover:border-white/20 hover:text-white'
+                    }`}
+                  >
+                    {!selectedPlan ? 'Current Plan' : 'Select Free'}
+                  </button>
+                </div>
+
                 {/* Pro Tier */}
                 <div className="bg-zinc-900/50 border border-white/10 p-10 rounded-3xl backdrop-blur-sm flex flex-col hover:border-red-600/50 transition-all group">
                   <div className="mb-8">
@@ -411,9 +454,13 @@ export default function App() {
                   <Tooltip content="Unlimited practice & basic feedback">
                     <button 
                       onClick={() => selectPlan('pro')}
-                      className="w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-white font-black uppercase tracking-widest rounded-xl border border-white/10 transition-all"
+                      className={`w-full py-4 font-black uppercase tracking-widest rounded-xl border transition-all ${
+                        selectedPlan === 'pro' 
+                          ? 'bg-zinc-800 text-white border-white/20' 
+                          : 'bg-zinc-800 hover:bg-zinc-700 text-white border-white/10'
+                      }`}
                     >
-                      Select Pro
+                      {selectedPlan === 'pro' ? 'Current Plan' : 'Select Pro'}
                     </button>
                   </Tooltip>
                 </div>
@@ -454,21 +501,16 @@ export default function App() {
                   <Tooltip content="Unlock advanced AI & video coaching">
                     <button 
                       onClick={() => selectPlan('elite')}
-                      className="w-full py-4 bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest rounded-xl border border-white/20 transition-all shadow-lg shadow-red-900/40"
+                      className={`w-full py-4 font-black uppercase tracking-widest rounded-xl border transition-all shadow-lg ${
+                        selectedPlan === 'elite' 
+                          ? 'bg-red-600 text-white border-white/20 shadow-red-900/40' 
+                          : 'bg-red-600 hover:bg-red-700 text-white border-white/20 shadow-red-900/40'
+                      }`}
                     >
-                      Get Premium
+                      {selectedPlan === 'elite' ? 'Current Plan' : 'Get Premium'}
                     </button>
                   </Tooltip>
                 </div>
-              </div>
-              
-              <div className="mt-12 text-center">
-                <button 
-                  onClick={() => setStep('setup')}
-                  className="text-xs text-zinc-500 hover:text-white transition-colors uppercase tracking-widest font-bold"
-                >
-                  Continue with Free Trial
-                </button>
               </div>
             </motion.div>
           ) : step === 'setup' ? (
@@ -564,6 +606,14 @@ export default function App() {
               className="flex flex-col h-[calc(100vh-180px)]"
             >
               <div className="flex-1 overflow-y-auto space-y-8 pb-8 px-2 scrollbar-hide">
+                {!selectedPlan && (
+                  <div className="flex justify-center mb-4">
+                    <div className="bg-red-600/10 border border-red-600/20 px-4 py-1.5 rounded-full flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
+                      <p className="text-[10px] font-black text-red-500 uppercase tracking-[0.2em]">Trial Session Active</p>
+                    </div>
+                  </div>
+                )}
                 {messages.map((msg, i) => (
                   <motion.div 
                     key={i}
