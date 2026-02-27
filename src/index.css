@@ -48,6 +48,13 @@
 
 body {
   @apply bg-black text-white antialiased;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 input, select {
