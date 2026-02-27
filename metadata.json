@@ -1,5 +1,5 @@
 {
-  "name": "EnvisionPaths",
-  "description": "AI-powered career coaching and interview preparation platform.",
+  "name": "EnvisionPaths - AI Career Coaching",
+  "description": "Real interview practice powered by AI. Get personalized coaching from an intelligent interview coach.",
   "requestFramePermissions": ["microphone"]
 }
