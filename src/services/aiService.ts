@@ -1,7 +1,14 @@
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
-// Initialize with the platform-provided key
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// Lazily initialized client so module loads even when the key is not yet set
+let _ai: GoogleGenAI | null = null;
+
+function getAI(): GoogleGenAI {
+  if (!_ai) {
+    _ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  }
+  return _ai;
+}
 
 export interface AIResponse {
   text: string;
@@ -16,7 +23,7 @@ export async function generateContent(
   history: any[] = []
 ): Promise<AIResponse> {
   try {
-    const response = await ai.models.generateContent({
+    const response = await getAI().models.generateContent({
       model: "gemini-3-flash-preview",
       contents: [
         ...history,
@@ -46,7 +53,7 @@ export async function streamContent(
   history: any[] = []
 ): Promise<void> {
   try {
-    const response = await ai.models.generateContentStream({
+    const response = await getAI().models.generateContentStream({
       model: "gemini-3-flash-preview",
       contents: [
         ...history,
