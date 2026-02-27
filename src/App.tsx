@@ -96,7 +96,7 @@ export default function App() {
       setSummary(response.text);
     } catch (error) {
       console.error("Error generating summary:", error);
-      setSummary("We encountered an error generating your summary. Please try again or review your chat history.");
+      setSummary("Oops! Something went wrong. Give it another try or check your chat.");
     } finally {
       setIsGeneratingSummary(false);
     }
@@ -191,7 +191,7 @@ export default function App() {
                     onClick={endInterview}
                     className="text-xs font-black uppercase tracking-widest text-black bg-yellow-400 hover:bg-yellow-500 px-4 py-2 rounded-md border border-white/20 transition-all shadow-lg shadow-yellow-900/20"
                   >
-                    End Session
+                    Finish Practice
                   </button>
                 </Tooltip>
               )}
@@ -228,13 +228,13 @@ export default function App() {
                   <h2 className="text-5xl font-black tracking-tighter uppercase italic mb-4">
                     {authMode === 'login' ? 'Welcome Back' : 'Get Started'}
                   </h2>
-                  <p className="text-zinc-500 text-lg">Elevate your career trajectory with HireMe AI.</p>
+                  <p className="text-zinc-500 text-lg">Land your dream job with AI-powered interview practice.</p>
                 </div>
 
                 <form onSubmit={handleAuth} className="space-y-5">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Email Address</label>
-                    <Tooltip content="Enter your registered email" position="right">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Your Email</label>
+                    <Tooltip content="We'll use this to send your results" position="right">
                       <div className="relative">
                         <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
                         <input 
@@ -248,8 +248,8 @@ export default function App() {
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Password</label>
-                    <Tooltip content="Minimum 8 characters" position="right">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Your Password</label>
+                    <Tooltip content="Make it secure (8+ characters)" position="right">
                       <div className="relative">
                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
                         <input 
@@ -267,7 +267,7 @@ export default function App() {
                       type="submit"
                       className="w-full bg-yellow-400 hover:bg-yellow-500 text-black font-black uppercase tracking-[0.2em] py-5 rounded-xl transition-all shadow-lg shadow-yellow-900/20 flex items-center justify-center gap-2 border border-white/20 group"
                     >
-                      {authMode === 'login' ? 'Sign In' : 'Create Account'}
+                      {authMode === 'login' ? 'Sign In' : 'Get Started'}
                       <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                     </button>
                   </Tooltip>
@@ -393,8 +393,8 @@ export default function App() {
                 </h2>
                 <p className="text-zinc-400">
                   {sessionsUsed >= 2 && !selectedPlan 
-                    ? 'You have used your 2 free sessions for this month. Upgrade to continue.' 
-                    : 'Choose the level of preparation required for your next move.'}
+                    ? "You've used your 2 free practice sessions. Ready to upgrade?" 
+                    : 'Pick the plan that works best for you.'}
                 </p>
               </div>
 
@@ -412,7 +412,7 @@ export default function App() {
                   <ul className="space-y-4 mb-10 flex-1">
                     <li className="flex items-center gap-3 text-zinc-300 text-sm">
                       <CheckCircle2 size={18} className="text-yellow-400" />
-                      Unlimited Mock Interviews
+                      Everything you need to practice with confidence
                     </li>
                     <li className="flex items-center gap-3 text-zinc-300 text-sm">
                       <CheckCircle2 size={18} className="text-yellow-400" />
@@ -429,7 +429,7 @@ export default function App() {
                       onClick={() => selectPlan('pro')}
                       className="w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-white font-black uppercase tracking-widest rounded-xl border border-white/10 transition-all"
                     >
-                      Select Pro
+                      Choose Pro
                     </button>
                   </Tooltip>
                 </div>
@@ -472,7 +472,7 @@ export default function App() {
                       onClick={() => selectPlan('elite')}
                       className="w-full py-4 bg-yellow-400 hover:bg-yellow-500 text-black font-black uppercase tracking-widest rounded-xl border border-white/20 transition-all shadow-lg shadow-yellow-900/40"
                     >
-                      Get Premium
+                      Upgrade to Premium
                     </button>
                   </Tooltip>
                 </div>
@@ -496,9 +496,9 @@ export default function App() {
               className="max-w-2xl mx-auto mt-12"
             >
               <div className="bg-zinc-900/30 border border-white/10 rounded-3xl p-10 backdrop-blur-sm">
-                <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-3">Prepare for Success</h2>
+                <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-3">Let's Get You Ready</h2>
                 <div className="flex items-center justify-between mb-10">
-                  <p className="text-zinc-400 leading-relaxed">The interview is your opportunity to shine. Define your goal and let's begin the practice session.</p>
+                  <p className="text-zinc-400 leading-relaxed">Get ready to ace your interview! Tell us about the role you're targeting.</p>
                   {!selectedPlan && (
                     <div className="bg-yellow-400/10 border border-yellow-400/20 px-3 py-1 rounded-full">
                       <p className="text-[10px] font-bold text-yellow-500 uppercase tracking-widest">
@@ -510,8 +510,8 @@ export default function App() {
                 
                 <div className="space-y-8">
                   <div className="space-y-3">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-yellow-500 ml-1">Target Position</label>
-                    <Tooltip content="The specific role you are practicing for" position="right">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-yellow-500 ml-1">What job are you aiming for?</label>
+                    <Tooltip content="Examples: Product Manager, Software Engineer" position="right">
                       <div className="relative">
                         <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
                         <input 
@@ -526,8 +526,8 @@ export default function App() {
                   </div>
 
                   <div className="space-y-3">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-yellow-500 ml-1">Industry Sector</label>
-                    <Tooltip content="Tailors the AI's industry knowledge" position="right">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-yellow-500 ml-1">What industry?</label>
+                    <Tooltip content="Helps us customize your interview" position="right">
                       <select 
                         value={industry}
                         onChange={(e) => setIndustry(e.target.value)}
@@ -663,7 +663,7 @@ export default function App() {
                   <div className="flex items-center gap-6 mb-12">
                     <BrandLogo size={80} className="shadow-2xl shadow-yellow-900/40 border border-white/20 rounded-2xl" />
                     <div>
-                      <h2 className="text-4xl font-black tracking-tighter uppercase italic">Performance Report</h2>
+                      <h2 className="text-4xl font-black tracking-tighter uppercase italic">Your Interview Report</h2>
                       <p className="text-yellow-500 font-bold uppercase tracking-widest text-xs mt-1">{jobTitle}</p>
                     </div>
                   </div>
@@ -693,7 +693,7 @@ export default function App() {
                             }}
                             className="flex-1 bg-yellow-400 text-black font-black uppercase tracking-[0.3em] py-6 rounded-2xl shadow-xl shadow-yellow-900/40 hover:bg-yellow-500 transition-all border border-white/20"
                           >
-                            New Practice Session
+                            Practice Again
                           </button>
                         </Tooltip>
                         <Tooltip content="Save your performance report as PDF">
@@ -701,7 +701,7 @@ export default function App() {
                             onClick={() => window.print()}
                             className="px-10 py-6 bg-zinc-800 text-white font-black uppercase tracking-[0.2em] rounded-2xl hover:bg-zinc-700 transition-all border border-white/10"
                           >
-                            Export
+                            Save Report
                           </button>
                         </Tooltip>
                       </div>
