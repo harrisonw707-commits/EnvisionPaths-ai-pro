@@ -1,5 +1,5 @@
 {
-  "name": "EnvisionPath: Interview Pro",
+  "name": "EnvisionPaths",
   "description": "Real interview practice powered by AI. Get personalized coaching from an intelligent interview coach.",
   "requestFramePermissions": ["microphone"]
 }
