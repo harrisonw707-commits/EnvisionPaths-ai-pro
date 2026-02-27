@@ -4,7 +4,6 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import './App.css';
 import { 
   Briefcase, 
@@ -23,38 +22,9 @@ import {
   LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-
-const featureCards = [
-  {
-    icon: '🎯',
-    title: 'Real Interview Practice',
-    description: 'Practice with realistic interview questions tailored to your target role and industry — no scripts, no fluff.',
-  },
-  {
-    icon: '💬',
-    title: 'Honest Feedback',
-    description: 'Get direct, actionable feedback on your answers so you know exactly what to improve before the real thing.',
-  },
-  {
-    icon: '🆓',
-    title: '2 Free Sessions Monthly',
-    description: 'Start for free with 2 practice sessions every month. No credit card required to get going.',
-  },
-  {
-    icon: '📄',
-    title: 'Upload Your Resume',
-    description: 'Upload your resume to help tailor your practice session to your background. Your file stays private.',
-  },
-];
-
-// Initialize Gemini lazily to avoid crashing when API key is absent
-let genAI: GoogleGenAI | null = null;
-function getGenAI(): GoogleGenAI {
-  if (!genAI) {
-    genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-  }
-  return genAI;
-}
+import { generateContent } from './services/aiService';
+import { BrandLogo, BrandLogoText } from './components/BrandLogo';
+import { Tooltip } from './components/Tooltip';
 
 interface Message {
   role: 'user' | 'model';
@@ -62,10 +32,10 @@ interface Message {
   timestamp: Date;
 }
 
-type AppStep = 'home' | 'auth' | 'pricing' | 'setup' | 'interview' | 'summary' | 'privacy' | 'terms';
+type AppStep = 'auth' | 'pricing' | 'setup' | 'interview' | 'summary' | 'privacy' | 'terms';
 
 export default function App() {
-  const [step, setStep] = useState<AppStep>('home');
+  const [step, setStep] = useState<AppStep>('auth');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [selectedPlan, setSelectedPlan] = useState<'pro' | 'elite' | null>(null);
   const [sessionsUsed, setSessionsUsed] = useState(0);
@@ -97,6 +67,10 @@ export default function App() {
 
   const selectPlan = (plan: 'pro' | 'elite') => {
     setSelectedPlan(plan);
+    const url = plan === 'pro' 
+      ? 'https://buy.stripe.com/4gM00keeYdDH62d6OR9R606' 
+      : 'https://buy.stripe.com/6oUbJ2gn62Z3aitc9b9R607';
+    window.open(url, '_blank');
     setStep('setup');
   };
 
@@ -118,12 +92,8 @@ export default function App() {
       Interview Transcript:
       ${conversation}`;
 
-      const response = await getGenAI().models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-      });
-      
-      setSummary(response.text || "No feedback generated.");
+      const response = await generateContent(prompt);
+      setSummary(response.text);
     } catch (error) {
       console.error("Error generating summary:", error);
       setSummary("We encountered an error generating your summary. Please try again or review your chat history.");
@@ -150,13 +120,8 @@ export default function App() {
     Keep your tone professional, encouraging, and insightful.`;
 
     try {
-      const model = getGenAI().models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-      });
-      
-      const response = await model;
-      const text = response.text || "Welcome to your interview simulation.";
+      const response = await generateContent(prompt);
+      const text = response.text;
       
       setMessages([{
         role: 'model',
@@ -190,22 +155,15 @@ export default function App() {
         parts: [{ text: m.text }]
       }));
 
-      const response = await getGenAI().models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: [
-          ...history,
-          { role: "user", parts: [{ text: input }] }
-        ],
-        config: {
-          systemInstruction: `You are an expert career coach at EnvisionPaths. 
-          Conduct a realistic interview for a ${jobTitle} role. 
-          After the user answers a question, briefly acknowledge their answer with a "Coach's Tip" (in italics) 
-          and then move on to the next insightful interview question. 
-          Focus on behavioral, technical, and situational questions.`
-        }
-      });
+      const systemInstruction = `You are an expert career coach at EnvisionPaths. 
+      Conduct a realistic interview for a ${jobTitle} role. 
+      After the user answers a question, briefly acknowledge their answer with a "Coach's Tip" (in italics) 
+      and then move on to the next insightful interview question. 
+      Focus on behavioral, technical, and situational questions.`;
 
-      const text = response.text || "I'm sorry, I couldn't process that. Could you repeat?";
+      const response = await generateContent(input, systemInstruction, history);
+
+      const text = response.text;
       setMessages(prev => [...prev, {
         role: 'model',
         text: text,
@@ -223,33 +181,29 @@ export default function App() {
       {/* Header */}
       <header className="sticky top-0 z-10 bg-black/80 backdrop-blur-md border-b border-white/10 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-red-600 rounded-lg flex items-center justify-center text-white shadow-[0_0_20px_rgba(220,38,38,0.3)] border border-white/20">
-              <Target size={24} />
-            </div>
-            <div>
-              <h1 className="text-xl font-black tracking-tighter text-white uppercase italic">EnvisionPaths AI</h1>
-              <p className="text-[10px] font-bold text-red-400 uppercase tracking-[0.2em]">Elite Career Coaching</p>
-            </div>
-          </div>
+          <BrandLogoText />
           
-          {step !== 'home' && step !== 'auth' && (
+          {step !== 'auth' && (
             <div className="flex items-center gap-4">
               {step === 'interview' && (
-                <button 
-                  onClick={endInterview}
-                  className="text-xs font-black uppercase tracking-widest text-white bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md border border-white/20 transition-all shadow-lg shadow-red-900/20"
-                >
-                  End Session
-                </button>
+                <Tooltip content="End current session and generate report">
+                  <button 
+                    onClick={endInterview}
+                    className="text-xs font-black uppercase tracking-widest text-white bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md border border-white/20 transition-all shadow-lg shadow-red-900/20"
+                  >
+                    End Session
+                  </button>
+                </Tooltip>
               )}
-              <button 
-                onClick={() => setStep('home')}
-                className="text-white/60 hover:text-red-400 transition-colors"
-                title="Logout"
-              >
-                <LogOut size={20} />
-              </button>
+              <Tooltip content="Sign out of your account" position="bottom">
+                <button 
+                  onClick={() => setStep('auth')}
+                  className="text-white/60 hover:text-red-500 transition-colors"
+                  title="Logout"
+                >
+                  <LogOut size={20} />
+                </button>
+              </Tooltip>
             </div>
           )}
         </div>
@@ -257,95 +211,72 @@ export default function App() {
 
       <main className="max-w-5xl mx-auto p-6">
         <AnimatePresence mode="wait">
-          {step === 'home' ? (
-            <motion.div
-              key="home"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="app-home"
-            >
-              <div className="text-center mb-16">
-                <h2 className="welcome-heading">Practice Interviews. Get Honest Feedback. Land the Job.</h2>
-                <p className="welcome-tagline">Real practice for real situations — whether you're just starting out, switching careers, or getting back on your feet.</p>
-                <div className="mt-8 flex flex-col items-center gap-3">
-                  <button
-                    onClick={() => setStep('auth')}
-                    className="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] px-10 py-5 rounded-2xl transition-all shadow-lg shadow-red-900/30 border border-white/20"
-                  >
-                    Get 2 free sessions <ArrowRight size={18} />
-                  </button>
-                  <p className="text-xs text-zinc-500">Real practice. Real feedback. See if you're ready.</p>
-                </div>
-              </div>
-
-              <div className="feature-cards grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {featureCards.map((card) => (
-                  <div key={card.title} className="feature-card bg-zinc-900/50 border border-white/10 rounded-2xl p-6 hover:border-red-600/50 transition-colors">
-                    <span className="feature-card-icon text-3xl mb-3 block">{card.icon}</span>
-                    <h3 className="feature-card-title font-black uppercase tracking-wide text-white mb-2">{card.title}</h3>
-                    <p className="feature-card-desc text-zinc-400 text-sm leading-relaxed">{card.description}</p>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          ) : step === 'auth' ? (
+          {step === 'auth' ? (
             <motion.div 
               key="auth"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.05 }}
-              className="max-w-md mx-auto mt-20"
+              className="max-w-xl mx-auto mt-20"
             >
               {/* ... auth content ... */}
-              <div className="bg-zinc-900/50 border border-white/10 p-8 rounded-2xl backdrop-blur-xl shadow-2xl">
-                <div className="text-center mb-10">
-                  <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-2">
-                    {authMode === 'login' ? 'Welcome Back' : 'Join Elite'}
+              <div className="bg-zinc-900/50 border border-white/10 p-12 rounded-3xl backdrop-blur-xl shadow-2xl">
+                <div className="flex justify-center mb-12">
+                  <BrandLogo size={120} className="drop-shadow-[0_0_20px_rgba(220,38,38,0.3)]" />
+                </div>
+                <div className="text-center mb-12">
+                  <h2 className="text-5xl font-black tracking-tighter uppercase italic mb-4">
+                    {authMode === 'login' ? 'Welcome Back' : 'Get Started'}
                   </h2>
-                  <p className="text-zinc-500 text-sm">Elevate your career trajectory with EnvisionPaths.</p>
+                  <p className="text-zinc-500 text-lg">Elevate your career trajectory with EnvisionPaths.</p>
                 </div>
 
                 <form onSubmit={handleAuth} className="space-y-5">
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Email Address</label>
-                    <div className="relative">
-                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-                      <input 
-                        type="email" 
-                        required
-                        placeholder="name@company.com"
-                        className="w-full pl-12 pr-4 py-4 bg-black border border-white/10 rounded-xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-sm"
-                      />
-                    </div>
+                    <Tooltip content="Enter your registered email" position="right">
+                      <div className="relative">
+                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+                        <input 
+                          type="email" 
+                          required
+                          placeholder="name@company.com"
+                          className="w-full pl-12 pr-4 py-4 bg-black border border-white/10 rounded-xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-sm"
+                        />
+                      </div>
+                    </Tooltip>
                   </div>
 
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Password</label>
-                    <div className="relative">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-                      <input 
-                        type="password" 
-                        required
-                        placeholder="••••••••"
-                        className="w-full pl-12 pr-4 py-4 bg-black border border-white/10 rounded-xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-sm"
-                      />
-                    </div>
+                    <Tooltip content="Minimum 8 characters" position="right">
+                      <div className="relative">
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+                        <input 
+                          type="password" 
+                          required
+                          placeholder="••••••••"
+                          className="w-full pl-12 pr-4 py-4 bg-black border border-white/10 rounded-xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-sm"
+                        />
+                      </div>
+                    </Tooltip>
                   </div>
 
-                  <button 
-                    type="submit"
-                    className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] py-5 rounded-xl transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2 border border-white/20 group"
-                  >
-                    {authMode === 'login' ? 'Sign In' : 'Create Account'}
-                    <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                  </button>
+                  <Tooltip content="Securely access your dashboard">
+                    <button 
+                      type="submit"
+                      className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] py-5 rounded-xl transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2 border border-white/20 group"
+                    >
+                      {authMode === 'login' ? 'Sign In' : 'Create Account'}
+                      <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                    </button>
+                  </Tooltip>
                 </form>
 
                 <div className="mt-8 text-center space-y-4">
                   <button 
                     onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
-                    className="text-xs text-zinc-500 hover:text-red-400 transition-colors block w-full"
+                    className="text-xs text-zinc-500 hover:text-red-500 transition-colors block w-full"
                   >
                     {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
                   </button>
@@ -380,7 +311,7 @@ export default function App() {
                 <div className="space-y-8 text-zinc-400 text-sm leading-relaxed">
                   <section>
                     <h3 className="text-white font-bold uppercase tracking-widest mb-3">1. Data Collection</h3>
-                    <p>EnvisionPaths collects minimal personal data required for account creation and interview simulation. This includes your email address and the job titles/industries you provide for practice sessions.</p>
+                    <p>EnvisionPaths collects minimal personal data required for account practice. This includes your email address and the job titles/industries you provide for practice sessions.</p>
                   </section>
 
                   <section>
@@ -395,7 +326,7 @@ export default function App() {
 
                   <section>
                     <h3 className="text-white font-bold uppercase tracking-widest mb-3">4. Your Rights</h3>
-                    <p>You have the right to access, correct, or delete your data at any time. Contact our elite support team for any data-related inquiries.</p>
+                    <p>You have the right to access, correct, or delete your data at any time. Contact our expert support team for any data-related inquiries.</p>
                   </section>
                 </div>
 
@@ -421,22 +352,22 @@ export default function App() {
                 <div className="space-y-8 text-zinc-400 text-sm leading-relaxed">
                   <section>
                     <h3 className="text-white font-bold uppercase tracking-widest mb-3">1. Acceptance of Terms</h3>
-                    <p>By accessing EnvisionPaths, you agree to be bound by these elite terms of service. Our platform is designed for professional development and career advancement simulation.</p>
+                    <p>By accessing EnvisionPaths, you agree to be bound by these professional terms of service. Our platform is designed for professional development and career advancement practice.</p>
                   </section>
 
                   <section>
                     <h3 className="text-white font-bold uppercase tracking-widest mb-3">2. User Conduct</h3>
-                    <p>Users must interact with the AI simulation in a professional manner. Any attempt to exploit or manipulate the AI engine for non-career-related purposes may result in immediate account termination.</p>
+                    <p>Users must interact with the AI practice session in a professional manner. Any attempt to exploit or manipulate the AI engine for non-career-related purposes may result in immediate account termination.</p>
                   </section>
 
                   <section>
                     <h3 className="text-white font-bold uppercase tracking-widest mb-3">3. Subscription & Billing</h3>
-                    <p>Subscription fees are billed in advance on a monthly basis. Free tier users are limited to 2 simulations per month. Elite and Pro features are subject to active subscription status.</p>
+                    <p>Subscription fees are billed in advance on a monthly basis. Free tier users are limited to 2 practice sessions per month. Premium and Pro features are subject to active subscription status.</p>
                   </section>
 
                   <section>
                     <h3 className="text-white font-bold uppercase tracking-widest mb-3">4. Limitation of Liability</h3>
-                    <p>EnvisionPaths provides simulations for practice purposes only. We do not guarantee employment or specific career outcomes. The performance score is an AI-generated estimate based on your simulation input.</p>
+                    <p>EnvisionPaths provides practice sessions for professional development. We do not guarantee employment or specific career outcomes. The performance score is an AI-generated estimate based on your session input.</p>
                   </section>
                 </div>
 
@@ -493,22 +424,24 @@ export default function App() {
                     </li>
                   </ul>
 
-                  <button 
-                    onClick={() => selectPlan('pro')}
-                    className="w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-white font-black uppercase tracking-widest rounded-xl border border-white/10 transition-all"
-                  >
-                    Select Pro
-                  </button>
+                  <Tooltip content="Unlimited practice & basic feedback">
+                    <button 
+                      onClick={() => selectPlan('pro')}
+                      className="w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-white font-black uppercase tracking-widest rounded-xl border border-white/10 transition-all"
+                    >
+                      Select Pro
+                    </button>
+                  </Tooltip>
                 </div>
 
-                {/* Elite Tier */}
+                {/* Premium Tier */}
                 <div className="bg-zinc-900 border-2 border-red-600 p-10 rounded-3xl backdrop-blur-sm flex flex-col relative shadow-[0_0_40px_rgba(220,38,38,0.15)]">
                   <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-red-600 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.2em] text-white border border-white/20">
                     Recommended
                   </div>
                   
                   <div className="mb-8">
-                    <h3 className="text-2xl font-black uppercase italic mb-2 text-red-500">Elite</h3>
+                    <h3 className="text-2xl font-black uppercase italic mb-2 text-red-500">Premium</h3>
                     <div className="flex items-baseline gap-1">
                       <span className="text-4xl font-black">$19.99</span>
                       <span className="text-zinc-500 text-sm uppercase font-bold tracking-widest">/ month</span>
@@ -526,7 +459,7 @@ export default function App() {
                     </li>
                     <li className="flex items-center gap-3 text-white text-sm font-bold">
                       <CheckCircle2 size={18} className="text-red-600" />
-                      Video Simulation Mode
+                      Video Practice Mode
                     </li>
                     <li className="flex items-center gap-3 text-white text-sm font-bold">
                       <CheckCircle2 size={18} className="text-red-600" />
@@ -534,12 +467,14 @@ export default function App() {
                     </li>
                   </ul>
 
-                  <button 
-                    onClick={() => selectPlan('elite')}
-                    className="w-full py-4 bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest rounded-xl border border-white/20 transition-all shadow-lg shadow-red-900/40"
-                  >
-                    Go Elite
-                  </button>
+                  <Tooltip content="Unlock advanced AI & video coaching">
+                    <button 
+                      onClick={() => selectPlan('elite')}
+                      className="w-full py-4 bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest rounded-xl border border-white/20 transition-all shadow-lg shadow-red-900/40"
+                    >
+                      Get Premium
+                    </button>
+                  </Tooltip>
                 </div>
               </div>
               
@@ -561,9 +496,9 @@ export default function App() {
               className="max-w-2xl mx-auto mt-12"
             >
               <div className="bg-zinc-900/30 border border-white/10 rounded-3xl p-10 backdrop-blur-sm">
-                <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-3">Prepare for Battle</h2>
+                <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-3">Prepare for Success</h2>
                 <div className="flex items-center justify-between mb-10">
-                  <p className="text-zinc-400 leading-relaxed">The interview is your arena. Define your target and let's begin the simulation.</p>
+                  <p className="text-zinc-400 leading-relaxed">The interview is your opportunity to shine. Define your goal and let's begin the practice session.</p>
                   {!selectedPlan && (
                     <div className="bg-red-600/10 border border-red-600/20 px-3 py-1 rounded-full">
                       <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest">
@@ -576,52 +511,58 @@ export default function App() {
                 <div className="space-y-8">
                   <div className="space-y-3">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-red-500 ml-1">Target Position</label>
-                    <div className="relative">
-                      <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
-                      <input 
-                        type="text" 
-                        placeholder="e.g. Director of Engineering"
-                        value={jobTitle}
-                        onChange={(e) => setJobTitle(e.target.value)}
-                        className="w-full pl-12 pr-4 py-5 bg-black border border-white/10 rounded-2xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-lg font-medium"
-                      />
-                    </div>
+                    <Tooltip content="The specific role you are practicing for" position="right">
+                      <div className="relative">
+                        <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
+                        <input 
+                          type="text" 
+                          placeholder="e.g. Director of Engineering"
+                          value={jobTitle}
+                          onChange={(e) => setJobTitle(e.target.value)}
+                          className="w-full pl-12 pr-4 py-5 bg-black border border-white/10 rounded-2xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-lg font-medium"
+                        />
+                      </div>
+                    </Tooltip>
                   </div>
 
                   <div className="space-y-3">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-red-500 ml-1">Industry Sector</label>
-                    <select 
-                      value={industry}
-                      onChange={(e) => setIndustry(e.target.value)}
-                      className="w-full px-6 py-5 bg-black border border-white/10 rounded-2xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-lg appearance-none"
-                    >
-                      <option value="">Select Sector</option>
-                      <option value="Technology">Technology</option>
-                      <option value="Finance">Finance</option>
-                      <option value="Healthcare">Healthcare</option>
-                      <option value="Defense">Defense & Aerospace</option>
-                      <option value="Marketing">Marketing</option>
-                    </select>
+                    <Tooltip content="Tailors the AI's industry knowledge" position="right">
+                      <select 
+                        value={industry}
+                        onChange={(e) => setIndustry(e.target.value)}
+                        className="w-full px-6 py-5 bg-black border border-white/10 rounded-2xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-lg appearance-none"
+                      >
+                        <option value="">Select Sector</option>
+                        <option value="Technology">Technology</option>
+                        <option value="Finance">Finance</option>
+                        <option value="Healthcare">Healthcare</option>
+                        <option value="Defense">Defense & Aerospace</option>
+                        <option value="Marketing">Marketing</option>
+                      </select>
+                    </Tooltip>
                   </div>
 
-                  <button 
-                    onClick={startInterview}
-                    disabled={!jobTitle}
-                    className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.3em] py-6 rounded-2xl shadow-xl shadow-red-900/20 transition-all flex items-center justify-center gap-3 border border-white/20 group"
-                  >
-                    Initialize Simulation
-                    <ChevronRight size={24} className="group-hover:translate-x-1 transition-transform" />
-                  </button>
+                  <Tooltip content="Launch the AI career coach simulation">
+                    <button 
+                      onClick={startInterview}
+                      disabled={!jobTitle}
+                      className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.3em] py-6 rounded-2xl shadow-xl shadow-red-900/20 transition-all flex items-center justify-center gap-3 border border-white/20 group"
+                    >
+                      Start Practice Session
+                      <ChevronRight size={24} className="group-hover:translate-x-1 transition-transform" />
+                    </button>
+                  </Tooltip>
                 </div>
 
                 <div className="mt-16 grid grid-cols-3 gap-6">
                   <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-600/50 transition-colors">
                     <Award className="mx-auto text-red-600 mb-3" size={28} />
-                    <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest group-hover:text-white transition-colors">Elite Tips</p>
+                    <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest group-hover:text-white transition-colors">Expert Tips</p>
                   </div>
                   <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-600/50 transition-colors">
                     <CheckCircle2 className="mx-auto text-red-600 mb-3" size={28} />
-                    <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest group-hover:text-white transition-colors">Performance</p>
+                    <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest group-hover:text-white transition-colors">Expert Analysis</p>
                   </div>
                   <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-600/50 transition-colors">
                     <MessageSquare className="mx-auto text-red-600 mb-3" size={28} />
@@ -686,17 +627,19 @@ export default function App() {
                     onChange={(e) => setInput(e.target.value)}
                     className="w-full pl-8 pr-20 py-6 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-lg"
                   />
-                  <button 
-                    type="submit"
-                    disabled={!input.trim() || isTyping}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-12 h-12 bg-red-600 text-white rounded-xl flex items-center justify-center hover:bg-red-700 disabled:opacity-30 transition-all shadow-lg shadow-red-900/20 border border-white/20"
-                  >
-                    <Send size={22} />
-                  </button>
+                  <Tooltip content="Send your response to the coach">
+                    <button 
+                      type="submit"
+                      disabled={!input.trim() || isTyping}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 w-12 h-12 bg-red-600 text-white rounded-xl flex items-center justify-center hover:bg-red-700 disabled:opacity-30 transition-all shadow-lg shadow-red-900/20 border border-white/20"
+                    >
+                      <Send size={22} />
+                    </button>
+                  </Tooltip>
                 </form>
                 <div className="flex justify-between items-center mt-6 px-2">
                   <p className="text-[9px] text-zinc-600 uppercase tracking-[0.3em] font-black">
-                    EnvisionPaths Intelligence Simulation
+                    EnvisionPaths Career Intelligence
                   </p>
                   <div className="flex gap-2">
                     <div className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
@@ -718,9 +661,7 @@ export default function App() {
                 
                 <div className="relative z-10">
                   <div className="flex items-center gap-6 mb-12">
-                    <div className="w-20 h-20 bg-red-600 text-white rounded-2xl flex items-center justify-center shadow-2xl shadow-red-900/40 border border-white/20">
-                      <Award size={40} />
-                    </div>
+                    <BrandLogo size={80} className="shadow-2xl shadow-red-900/40 border border-white/20 rounded-2xl" />
                     <div>
                       <h2 className="text-4xl font-black tracking-tighter uppercase italic">Performance Report</h2>
                       <p className="text-red-500 font-bold uppercase tracking-widest text-xs mt-1">{jobTitle}</p>
@@ -731,7 +672,7 @@ export default function App() {
                     <div className="space-y-8 py-20">
                       <div className="flex flex-col items-center justify-center gap-6">
                         <RefreshCw className="text-red-600 animate-spin" size={64} />
-                        <p className="text-zinc-400 font-black uppercase tracking-[0.3em] animate-pulse">Processing Simulation Data</p>
+                        <p className="text-zinc-400 font-black uppercase tracking-[0.3em] animate-pulse">Analyzing Your Session</p>
                       </div>
                     </div>
                   ) : (
@@ -743,22 +684,26 @@ export default function App() {
                       </div>
 
                       <div className="pt-12 border-t border-white/10 flex gap-6">
-                        <button 
-                          onClick={() => {
-                            setStep('setup');
-                            setMessages([]);
-                            setSummary('');
-                          }}
-                          className="flex-1 bg-red-600 text-white font-black uppercase tracking-[0.3em] py-6 rounded-2xl shadow-xl shadow-red-900/40 hover:bg-red-700 transition-all border border-white/20"
-                        >
-                          New Simulation
-                        </button>
-                        <button 
-                          onClick={() => window.print()}
-                          className="px-10 py-6 bg-zinc-800 text-white font-black uppercase tracking-[0.2em] rounded-2xl hover:bg-zinc-700 transition-all border border-white/10"
-                        >
-                          Export
-                        </button>
+                        <Tooltip content="Start a fresh interview session">
+                          <button 
+                            onClick={() => {
+                              setStep('setup');
+                              setMessages([]);
+                              setSummary('');
+                            }}
+                            className="flex-1 bg-red-600 text-white font-black uppercase tracking-[0.3em] py-6 rounded-2xl shadow-xl shadow-red-900/40 hover:bg-red-700 transition-all border border-white/20"
+                          >
+                            New Practice Session
+                          </button>
+                        </Tooltip>
+                        <Tooltip content="Save your performance report as PDF">
+                          <button 
+                            onClick={() => window.print()}
+                            className="px-10 py-6 bg-zinc-800 text-white font-black uppercase tracking-[0.2em] rounded-2xl hover:bg-zinc-700 transition-all border border-white/10"
+                          >
+                            Export
+                          </button>
+                        </Tooltip>
                       </div>
                     </div>
                   )}

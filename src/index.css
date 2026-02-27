@@ -1,15 +1,55 @@
+@import "tailwindcss";
+
 :root {
   --color-brand-purple: #dc2626; /* Changed to red */
 }
 
-.text-glow-purple {
-  text-shadow: 0 0 5px #dc2626, 0 0 10px #dc2626; /* Changed to red shadow */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-brand-red: #DC2626;
+  --color-brand-black: #000000;
 }
 
-.focus\:border-purple-600:focus {
-  border-color: #dc2626; /* Changed to red */
+@layer utilities {
+  .text-glow-purple {
+    text-shadow: 0 0 5px #dc2626, 0 0 10px #dc2626; /* Changed to red shadow */
+  }
+  .focus\:border-purple-600:focus {
+    border-color: #dc2626; /* Changed to red */
+  }
+  .focus\:ring-purple-600:focus {
+    ring-color: #dc2626; /* Changed to red */
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .bg-dark-gradient {
+    background: linear-gradient(180deg, #1a1a1a 0%, #000000 100%);
+  }
+  .bg-app-gradient {
+    background: linear-gradient(90deg, rgba(220, 38, 38, 1), rgba(200, 25, 25, 1));
+  }
+  .bg-welcome-gradient {
+    background: linear-gradient(90deg, rgba(220, 38, 38, 1), rgba(255, 99, 71, 1));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .border-white-trim {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+  .text-glow-red {
+    text-shadow: 0 0 15px rgba(220, 38, 38, 0.5);
+  }
 }
 
-.focus\:ring-purple-600:focus {
-  ring-color: #dc2626; /* Changed to red */
+body {
+  @apply bg-black text-white antialiased;
+}
+
+input, select {
+  @apply bg-zinc-900 border-zinc-800 text-white focus:border-red-600 focus:ring-red-600 transition-all;
 }

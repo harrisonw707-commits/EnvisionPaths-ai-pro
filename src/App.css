@@ -4,9 +4,9 @@
 
 .welcome-heading {
   background: linear-gradient(90deg, rgba(220, 38, 38, 1), rgba(255, 99, 71, 1));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
-
-/* Update all purple shades to red shades */
 
 .some-class {
   color: rgba(220, 38, 38, 1);
@@ -15,5 +15,3 @@
 .another-class {
   border-color: rgba(220, 38, 38, 1);
 }
-
-/* Add additional updates here as necessary */
