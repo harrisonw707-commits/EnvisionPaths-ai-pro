@@ -4,7 +4,6 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import './App.css';
 import { 
   Briefcase, 
   MessageSquare, 
@@ -196,6 +195,7 @@ export default function App() {
                 <Tooltip content="End current session and generate report">
                   <button 
                     onClick={endInterview}
+                    aria-label="End practice session"
                     className="text-xs font-black uppercase tracking-widest text-white bg-red-600 hover:bg-red-700 px-4 py-2 rounded-md border border-white/20 transition-all shadow-lg shadow-red-900/20"
                   >
                     End Session
@@ -205,6 +205,7 @@ export default function App() {
               <Tooltip content="Manage your subscription" position="bottom">
                 <button 
                   onClick={() => setStep('pricing')}
+                  aria-label="Billing and subscription"
                   className="text-white/60 hover:text-red-500 transition-colors flex items-center gap-2"
                 >
                   <CreditCard size={20} />
@@ -214,6 +215,7 @@ export default function App() {
               <Tooltip content="Sign out of your account" position="bottom">
                 <button 
                   onClick={() => setStep('auth')}
+                  aria-label="Logout"
                   className="text-white/60 hover:text-red-500 transition-colors"
                   title="Logout"
                 >
@@ -242,23 +244,23 @@ export default function App() {
                   </div>
                   <h1 className="text-6xl sm:text-7xl font-black tracking-tighter uppercase italic leading-[0.9]">
                     Master Your <br />
-                    <span className="text-red-600">Interview</span>
+                    <span className="text-red-500">Interview</span>
                   </h1>
-                  <p className="text-zinc-400 text-lg max-w-md mx-auto lg:mx-0 leading-relaxed">
+                  <p className="text-zinc-300 text-lg max-w-md mx-auto lg:mx-0 leading-relaxed">
                     The world's most advanced AI interview coach. Practice with industry-specific scenarios and get real-time feedback to land your dream job.
                   </p>
                   <div className="flex flex-wrap justify-center lg:justify-start gap-6 pt-4">
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 size={16} className="text-red-600" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Real-time Analysis</span>
+                      <CheckCircle2 size={16} className="text-red-500" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-300">Real-time Analysis</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 size={16} className="text-red-600" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Industry Specific</span>
+                      <CheckCircle2 size={16} className="text-red-500" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-300">Industry Specific</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 size={16} className="text-red-600" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Expert Coaching</span>
+                      <CheckCircle2 size={16} className="text-red-500" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-300">Expert Coaching</span>
                     </div>
                   </div>
                 </div>
@@ -275,37 +277,39 @@ export default function App() {
                     <h2 className="text-3xl font-black tracking-tighter uppercase italic mb-2">
                       {authMode === 'login' ? 'Welcome Back' : 'Create Account'}
                     </h2>
-                    <p className="text-zinc-500 text-sm">Enter your credentials to access the platform.</p>
+                    <p className="text-zinc-300 text-sm">Enter your credentials to access the platform.</p>
                   </div>
 
                 <form onSubmit={handleAuth} className="space-y-5">
                   <div className="space-y-2">
-                    <label htmlFor="email" className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Email Address</label>
+                    <label htmlFor="email" className="text-[10px] font-bold uppercase tracking-widest text-zinc-300 ml-1">Email Address</label>
                     <Tooltip content="Enter your registered email" position="right">
                       <div className="relative">
-                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
                         <input 
                           id="email"
+                          name="email"
                           type="email" 
                           required
                           placeholder="name@company.com"
-                          className="w-full pl-12 pr-4 py-4 bg-black border border-white/10 rounded-xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-sm"
+                          className="w-full pl-12 pr-4 py-4 bg-black border border-white/10 rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-all text-sm"
                         />
                       </div>
                     </Tooltip>
                   </div>
 
                   <div className="space-y-2">
-                    <label htmlFor="password" className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Password</label>
+                    <label htmlFor="password" className="text-[10px] font-bold uppercase tracking-widest text-zinc-300 ml-1">Password</label>
                     <Tooltip content="Minimum 8 characters" position="right">
                       <div className="relative">
-                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
                         <input 
                           id="password"
+                          name="password"
                           type="password" 
                           required
                           placeholder="••••••••"
-                          className="w-full pl-12 pr-4 py-4 bg-black border border-white/10 rounded-xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-sm"
+                          className="w-full pl-12 pr-4 py-4 bg-black border border-white/10 rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-all text-sm"
                         />
                       </div>
                     </Tooltip>
@@ -325,7 +329,7 @@ export default function App() {
                 <div className="mt-8 text-center space-y-4">
                   <button 
                     onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
-                    className="text-xs text-zinc-500 hover:text-red-500 transition-colors block w-full"
+                    className="text-xs text-zinc-300 hover:text-red-500 transition-colors block w-full"
                   >
                     {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
                   </button>
@@ -333,14 +337,14 @@ export default function App() {
                     <button 
                       type="button"
                       onClick={() => setIsPrivacyOpen(true)}
-                      className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors uppercase tracking-widest font-bold"
+                      className="text-[10px] text-zinc-300 hover:text-zinc-100 transition-colors uppercase tracking-widest font-bold"
                     >
                       Privacy Policy
                     </button>
                     <button 
                       type="button"
                       onClick={() => setIsTermsOpen(true)}
-                      className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors uppercase tracking-widest font-bold"
+                      className="text-[10px] text-zinc-300 hover:text-zinc-100 transition-colors uppercase tracking-widest font-bold"
                     >
                       Terms of Service
                     </button>
@@ -349,13 +353,12 @@ export default function App() {
               </div>
             </div>
 
-              {/* Modals */}
               <Modal 
                 isOpen={isPrivacyOpen} 
                 onClose={() => setIsPrivacyOpen(false)} 
                 title="Privacy Policy"
               >
-                <div className="space-y-6 text-zinc-400 text-sm leading-relaxed">
+                <div className="space-y-6 text-zinc-300 text-sm leading-relaxed">
                   <section>
                     <h3 className="text-white font-bold uppercase tracking-widest mb-2">1. Data Collection</h3>
                     <p>EnvisionPaths collects minimal personal data required for account practice. This includes your email address and the job titles/industries you provide for practice sessions.</p>
@@ -380,7 +383,7 @@ export default function App() {
                 onClose={() => setIsTermsOpen(false)} 
                 title="Terms of Service"
               >
-                <div className="space-y-6 text-zinc-400 text-sm leading-relaxed">
+                <div className="space-y-6 text-zinc-300 text-sm leading-relaxed">
                   <section>
                     <h3 className="text-white font-bold uppercase tracking-widest mb-2">1. Acceptance of Terms</h3>
                     <p>By accessing EnvisionPaths, you agree to be bound by these professional terms of service. Our platform is designed for professional development and career advancement practice.</p>
@@ -426,21 +429,21 @@ export default function App() {
                     <h3 className="text-2xl font-black uppercase italic mb-2 text-zinc-400">Free</h3>
                     <div className="flex items-baseline gap-1">
                       <span className="text-4xl font-black">$0</span>
-                      <span className="text-zinc-500 text-sm uppercase font-bold tracking-widest">/ month</span>
+                      <span className="text-zinc-400 text-sm uppercase font-bold tracking-widest">/ month</span>
                     </div>
                   </div>
                   
                   <ul className="space-y-4 mb-10 flex-1">
                     <li className="flex items-center gap-3 text-zinc-400 text-sm">
-                      <CheckCircle2 size={18} className="text-zinc-600" />
+                      <CheckCircle2 size={18} className="text-zinc-400" />
                       2 Mock Interviews / mo
                     </li>
                     <li className="flex items-center gap-3 text-zinc-400 text-sm">
-                      <CheckCircle2 size={18} className="text-zinc-600" />
+                      <CheckCircle2 size={18} className="text-zinc-400" />
                       Basic AI Feedback
                     </li>
                     <li className="flex items-center gap-3 text-zinc-400 text-sm">
-                      <CheckCircle2 size={18} className="text-zinc-600" />
+                      <CheckCircle2 size={18} className="text-zinc-400" />
                       Community Access
                     </li>
                   </ul>
@@ -453,7 +456,7 @@ export default function App() {
                     className={`w-full py-4 font-black uppercase tracking-widest rounded-xl border transition-all ${
                       !selectedPlan 
                         ? 'bg-zinc-800 text-white border-white/20' 
-                        : 'bg-transparent text-zinc-500 border-white/5 hover:border-white/20 hover:text-white'
+                        : 'bg-transparent text-zinc-400 border-white/5 hover:border-white/20 hover:text-white'
                     }`}
                   >
                     {!selectedPlan ? 'Current Plan' : 'Select Free'}
@@ -466,7 +469,7 @@ export default function App() {
                     <h3 className="text-2xl font-black uppercase italic mb-2">Pro</h3>
                     <div className="flex items-baseline gap-1">
                       <span className="text-4xl font-black">$9.99</span>
-                      <span className="text-zinc-500 text-sm uppercase font-bold tracking-widest">/ month</span>
+                      <span className="text-zinc-400 text-sm uppercase font-bold tracking-widest">/ month</span>
                     </div>
                   </div>
                   
@@ -509,7 +512,7 @@ export default function App() {
                     <h3 className="text-2xl font-black uppercase italic mb-2 text-red-500">Premium</h3>
                     <div className="flex items-baseline gap-1">
                       <span className="text-4xl font-black">$19.99</span>
-                      <span className="text-zinc-500 text-sm uppercase font-bold tracking-widest">/ month</span>
+                      <span className="text-zinc-400 text-sm uppercase font-bold tracking-widest">/ month</span>
                     </div>
                   </div>
                   
@@ -573,9 +576,10 @@ export default function App() {
                     <label htmlFor="jobTitle" className="text-[10px] font-bold uppercase tracking-widest text-red-500 ml-1">Target Position</label>
                     <Tooltip content="The specific role you are practicing for" position="right">
                       <div className="relative">
-                        <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
+                        <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
                         <input 
                           id="jobTitle"
+                          name="jobTitle"
                           type="text" 
                           placeholder="e.g. Director of Engineering"
                           value={jobTitle}
@@ -591,6 +595,7 @@ export default function App() {
                     <Tooltip content="Tailors the AI's industry knowledge" position="right">
                       <select 
                         id="industry"
+                        name="industry"
                         value={industry}
                         onChange={(e) => setIndustry(e.target.value)}
                         className="w-full px-6 py-5 bg-black border border-white/10 rounded-2xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-lg appearance-none"
@@ -618,17 +623,17 @@ export default function App() {
                 </div>
 
                 <div className="mt-16 grid grid-cols-3 gap-6">
-                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-600/50 transition-colors">
-                    <Award className="mx-auto text-red-600 mb-3" size={28} />
-                    <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest group-hover:text-white transition-colors">Expert Tips</p>
+                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-500 transition-colors">
+                    <Award className="mx-auto text-red-500 mb-3" size={28} />
+                    <p className="text-[9px] font-black uppercase text-zinc-300 tracking-widest group-hover:text-white transition-colors">Expert Tips</p>
                   </div>
-                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-600/50 transition-colors">
-                    <CheckCircle2 className="mx-auto text-red-600 mb-3" size={28} />
-                    <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest group-hover:text-white transition-colors">Expert Analysis</p>
+                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-500 transition-colors">
+                    <CheckCircle2 className="mx-auto text-red-500 mb-3" size={28} />
+                    <p className="text-[9px] font-black uppercase text-zinc-300 tracking-widest group-hover:text-white transition-colors">Expert Analysis</p>
                   </div>
-                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-600/50 transition-colors">
-                    <MessageSquare className="mx-auto text-red-600 mb-3" size={28} />
-                    <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest group-hover:text-white transition-colors">Real-Time</p>
+                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-500 transition-colors">
+                    <MessageSquare className="mx-auto text-red-500 mb-3" size={28} />
+                    <p className="text-[9px] font-black uppercase text-zinc-300 tracking-widest group-hover:text-white transition-colors">Real-Time</p>
                   </div>
                 </div>
               </div>
@@ -693,6 +698,7 @@ export default function App() {
                   <label htmlFor="chatInput" className="sr-only">Your response</label>
                   <input 
                     id="chatInput"
+                    name="chatInput"
                     type="text"
                     placeholder="Provide your response..."
                     value={input}
@@ -703,6 +709,7 @@ export default function App() {
                     <button 
                       type="submit"
                       disabled={!input.trim() || isTyping}
+                      aria-label="Send message"
                       className="absolute right-3 top-1/2 -translate-y-1/2 w-12 h-12 bg-red-600 text-white rounded-xl flex items-center justify-center hover:bg-red-700 disabled:opacity-30 transition-all shadow-lg shadow-red-900/20 border border-white/20"
                     >
                       <Send size={22} />
@@ -710,7 +717,7 @@ export default function App() {
                   </Tooltip>
                 </form>
                 <div className="flex justify-between items-center mt-6 px-2">
-                  <p className="text-[9px] text-zinc-600 uppercase tracking-[0.3em] font-black">
+                  <p className="text-[9px] text-zinc-400 uppercase tracking-[0.3em] font-black">
                     EnvisionPaths Career Intelligence
                   </p>
                   <div className="flex gap-2">
@@ -763,6 +770,7 @@ export default function App() {
                               setMessages([]);
                               setSummary('');
                             }}
+                            aria-label="Start new practice session"
                             className="flex-1 bg-red-600 text-white font-black uppercase tracking-[0.3em] py-6 rounded-2xl shadow-xl shadow-red-900/40 hover:bg-red-700 transition-all border border-white/20"
                           >
                             New Practice Session
@@ -771,6 +779,7 @@ export default function App() {
                         <Tooltip content="Save your performance report as PDF">
                           <button 
                             onClick={() => window.print()}
+                            aria-label="Export report to PDF"
                             className="px-10 py-6 bg-zinc-800 text-white font-black uppercase tracking-[0.2em] rounded-2xl hover:bg-zinc-700 transition-all border border-white/10"
                           >
                             Export

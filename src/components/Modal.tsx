@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X } from 'lucide-react';
 
@@ -10,10 +10,17 @@ interface ModalProps {
 }
 
 export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
+  const titleId = useId();
+
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+        >
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -28,9 +35,10 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
             className="relative w-full max-w-2xl bg-zinc-900 border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
           >
             <div className="flex items-center justify-between p-6 border-b border-white/10">
-              <h2 className="text-2xl font-black uppercase italic tracking-tighter text-white">{title}</h2>
+              <h2 id={titleId} className="text-2xl font-black uppercase italic tracking-tighter text-white">{title}</h2>
               <button 
                 onClick={onClose}
+                aria-label="Close modal"
                 className="p-2 hover:bg-white/5 rounded-full transition-colors text-zinc-400 hover:text-white"
               >
                 <X size={24} />

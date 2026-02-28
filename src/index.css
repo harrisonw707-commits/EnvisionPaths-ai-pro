@@ -1,24 +1,24 @@
 @import "tailwindcss";
 
 :root {
-  --color-brand-purple: #dc2626; /* Changed to red */
+  --color-brand-purple: #ef4444; /* Brighter red for better contrast */
 }
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --color-brand-red: #DC2626;
+  --color-brand-red: #ef4444;
   --color-brand-black: #000000;
 }
 
 @layer utilities {
   .text-glow-purple {
-    text-shadow: 0 0 5px #dc2626, 0 0 10px #dc2626; /* Changed to red shadow */
+    text-shadow: 0 0 5px #ef4444, 0 0 10px #ef4444;
   }
   .focus\:border-purple-600:focus {
-    border-color: #dc2626; /* Changed to red */
+    border-color: #ef4444;
   }
   .focus\:ring-purple-600:focus {
-    ring-color: #dc2626; /* Changed to red */
+    ring-color: #ef4444;
   }
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
@@ -31,10 +31,10 @@
     background: linear-gradient(180deg, #1a1a1a 0%, #000000 100%);
   }
   .bg-app-gradient {
-    background: linear-gradient(90deg, rgba(220, 38, 38, 1), rgba(200, 25, 25, 1));
+    background: linear-gradient(90deg, rgba(239, 68, 68, 1), rgba(220, 38, 38, 1));
   }
   .bg-welcome-gradient {
-    background: linear-gradient(90deg, rgba(220, 38, 38, 1), rgba(255, 99, 71, 1));
+    background: linear-gradient(90deg, rgba(239, 68, 68, 1), rgba(255, 99, 71, 1));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
@@ -42,7 +42,17 @@
     border: 1px solid rgba(255, 255, 255, 0.2);
   }
   .text-glow-red {
-    text-shadow: 0 0 15px rgba(220, 38, 38, 0.5);
+    text-shadow: 0 0 15px rgba(239, 68, 68, 0.5);
+  }
+  
+  /* Merged from App.css */
+  .App {
+    background: linear-gradient(90deg, rgba(239, 68, 68, 1), rgba(220, 38, 38, 1));
+  }
+  .welcome-heading {
+    background: linear-gradient(90deg, rgba(239, 68, 68, 1), rgba(255, 99, 71, 1));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 }
 
@@ -51,5 +61,20 @@ body {
 }
 
 input, select {
-  @apply bg-zinc-900 border-zinc-800 text-white focus:border-red-600 focus:ring-red-600 transition-all;
+  @apply bg-zinc-900 border-zinc-800 text-white focus:border-red-500 focus:ring-red-500 transition-all;
+}
+
+/* Custom Scrollbar for Modal */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }

@@ -14,6 +14,8 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({ size = 32, className = "" 
       fill="none" 
       xmlns="http://www.w3.org/2000/svg"
       className={className}
+      role="img"
+      aria-label="EnvisionPaths Logo"
     >
       {/* ENVISION text */}
       <text 
@@ -29,14 +31,14 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({ size = 32, className = "" 
       <text 
         x="350" 
         y="85" 
-        fill="#dc2626" 
+        fill="#ef4444" 
         style={{ font: '900 72px sans-serif', letterSpacing: '-2px' }}
       >
         PATHS
       </text>
 
       {/* Bottom Red Line */}
-      <rect x="0" y="110" width="650" height="6" fill="#dc2626" />
+      <rect x="0" y="110" width="650" height="6" fill="#ef4444" />
     </svg>
   );
 };
