@@ -186,11 +186,11 @@ export default function App() {
   return (
     <div className="min-h-screen bg-black font-sans text-white selection:bg-red-600 selection:text-white">
       {/* Header */}
-      <header className="sticky top-0 z-10 bg-black/80 backdrop-blur-md border-b border-white/10 px-6 py-4">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <BrandLogoText />
-          
-          {step !== 'auth' && (
+      {step !== 'auth' && (
+        <header className="sticky top-0 z-10 bg-black/80 backdrop-blur-md border-b border-white/10 px-6 py-4">
+          <div className="max-w-5xl mx-auto flex items-center justify-between">
+            <BrandLogoText />
+            
             <div className="flex items-center gap-4">
               {step === 'interview' && (
                 <Tooltip content="End current session and generate report">
@@ -221,39 +221,71 @@ export default function App() {
                 </button>
               </Tooltip>
             </div>
-          )}
-        </div>
-      </header>
+          </div>
+        </header>
+      )}
 
       <main className="max-w-5xl mx-auto p-6">
         <AnimatePresence mode="wait">
           {step === 'auth' ? (
             <motion.div 
               key="auth"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.05 }}
-              className="max-w-xl mx-auto mt-20"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="min-h-[90vh] flex flex-col items-center justify-center py-12"
             >
-              {/* ... auth content ... */}
-              <div className="bg-zinc-900/50 border border-white/10 p-12 rounded-3xl backdrop-blur-xl shadow-2xl">
-                <div className="flex justify-center mb-12">
-                  <BrandLogo size={120} className="drop-shadow-[0_0_20px_rgba(220,38,38,0.3)]" />
+              <div className="max-w-4xl w-full grid lg:grid-cols-2 gap-12 items-center">
+                <div className="space-y-8 text-center lg:text-left">
+                  <div className="inline-block px-4 py-1.5 bg-red-600/10 border border-red-600/20 rounded-full">
+                    <p className="text-[10px] font-black text-red-500 uppercase tracking-[0.3em]">AI-Powered Career Intelligence</p>
+                  </div>
+                  <h1 className="text-6xl sm:text-7xl font-black tracking-tighter uppercase italic leading-[0.9]">
+                    Master Your <br />
+                    <span className="text-red-600">Interview</span>
+                  </h1>
+                  <p className="text-zinc-400 text-lg max-w-md mx-auto lg:mx-0 leading-relaxed">
+                    The world's most advanced AI interview coach. Practice with industry-specific scenarios and get real-time feedback to land your dream job.
+                  </p>
+                  <div className="flex flex-wrap justify-center lg:justify-start gap-6 pt-4">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={16} className="text-red-600" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Real-time Analysis</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={16} className="text-red-600" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Industry Specific</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={16} className="text-red-600" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Expert Coaching</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-center mb-12">
-                  <h2 className="text-5xl font-black tracking-tighter uppercase italic mb-4">
-                    {authMode === 'login' ? 'Welcome Back' : 'Get Started'}
-                  </h2>
-                  <p className="text-zinc-500 text-lg">Elevate your career trajectory with EnvisionPaths.</p>
-                </div>
+
+                <div className="bg-zinc-900/50 border border-white/10 p-10 rounded-3xl backdrop-blur-xl shadow-2xl relative">
+                  <div className="absolute -top-12 -right-12 w-64 h-64 bg-red-600/10 rounded-full blur-3xl -z-10" />
+                  <div className="absolute -bottom-12 -left-12 w-64 h-64 bg-red-600/5 rounded-full blur-3xl -z-10" />
+                  
+                  <div className="flex justify-center mb-8">
+                    <BrandLogo size={100} className="drop-shadow-[0_0_20px_rgba(220,38,38,0.3)]" />
+                  </div>
+                  
+                  <div className="text-center mb-8">
+                    <h2 className="text-3xl font-black tracking-tighter uppercase italic mb-2">
+                      {authMode === 'login' ? 'Welcome Back' : 'Create Account'}
+                    </h2>
+                    <p className="text-zinc-500 text-sm">Enter your credentials to access the platform.</p>
+                  </div>
 
                 <form onSubmit={handleAuth} className="space-y-5">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Email Address</label>
+                    <label htmlFor="email" className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Email Address</label>
                     <Tooltip content="Enter your registered email" position="right">
                       <div className="relative">
                         <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
                         <input 
+                          id="email"
                           type="email" 
                           required
                           placeholder="name@company.com"
@@ -264,11 +296,12 @@ export default function App() {
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Password</label>
+                    <label htmlFor="password" className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 ml-1">Password</label>
                     <Tooltip content="Minimum 8 characters" position="right">
                       <div className="relative">
                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
                         <input 
+                          id="password"
                           type="password" 
                           required
                           placeholder="••••••••"
@@ -314,6 +347,7 @@ export default function App() {
                   </div>
                 </div>
               </div>
+            </div>
 
               {/* Modals */}
               <Modal 
@@ -536,11 +570,12 @@ export default function App() {
                 
                 <div className="space-y-8">
                   <div className="space-y-3">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-red-500 ml-1">Target Position</label>
+                    <label htmlFor="jobTitle" className="text-[10px] font-bold uppercase tracking-widest text-red-500 ml-1">Target Position</label>
                     <Tooltip content="The specific role you are practicing for" position="right">
                       <div className="relative">
                         <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
                         <input 
+                          id="jobTitle"
                           type="text" 
                           placeholder="e.g. Director of Engineering"
                           value={jobTitle}
@@ -552,9 +587,10 @@ export default function App() {
                   </div>
 
                   <div className="space-y-3">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-red-500 ml-1">Industry Sector</label>
+                    <label htmlFor="industry" className="text-[10px] font-bold uppercase tracking-widest text-red-500 ml-1">Industry Sector</label>
                     <Tooltip content="Tailors the AI's industry knowledge" position="right">
                       <select 
+                        id="industry"
                         value={industry}
                         onChange={(e) => setIndustry(e.target.value)}
                         className="w-full px-6 py-5 bg-black border border-white/10 rounded-2xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-lg appearance-none"
@@ -654,7 +690,9 @@ export default function App() {
 
               <div className="mt-auto pt-6 border-t border-white/10">
                 <form onSubmit={handleSendMessage} className="relative">
+                  <label htmlFor="chatInput" className="sr-only">Your response</label>
                   <input 
+                    id="chatInput"
                     type="text"
                     placeholder="Provide your response..."
                     value={input}
