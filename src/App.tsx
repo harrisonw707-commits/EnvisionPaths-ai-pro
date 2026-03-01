@@ -47,6 +47,8 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const [summary, setSummary] = useState<string>('');
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [jobTitle, setJobTitle] = useState('');
   const [industry, setIndustry] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -59,13 +61,49 @@ export default function App() {
     scrollToBottom();
   }, [messages, isTyping]);
 
-  const handleAuth = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (authMode === 'signup') {
-      setStep('pricing');
-    } else {
+  useEffect(() => {
+    const currentUser = localStorage.getItem('envision_current_user');
+    if (currentUser) {
       setStep('setup');
     }
+  }, []);
+
+  const handleAuth = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Simple localStorage based auth for prototype
+    const storedUsers = JSON.parse(localStorage.getItem('envision_users') || '[]');
+    
+    if (authMode === 'signup') {
+      const userExists = storedUsers.find((u: any) => u.email === email);
+      if (userExists) {
+        alert('An account with this email already exists. Please sign in.');
+        setAuthMode('login');
+        return;
+      }
+      
+      const newUser = { email, password, createdAt: new Date().toISOString() };
+      storedUsers.push(newUser);
+      localStorage.setItem('envision_users', JSON.stringify(storedUsers));
+      localStorage.setItem('envision_current_user', JSON.stringify(newUser));
+      setStep('pricing');
+    } else {
+      const user = storedUsers.find((u: any) => u.email === email && u.password === password);
+      if (user) {
+        localStorage.setItem('envision_current_user', JSON.stringify(user));
+        setStep('setup');
+      } else {
+        alert('Invalid email or password. Please check your credentials or sign up.');
+      }
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('envision_current_user');
+    setEmail('');
+    setPassword('');
+    setStep('auth');
+    setAuthMode('login');
   };
 
   const selectPlan = (plan: 'pro' | 'elite') => {
@@ -160,7 +198,7 @@ export default function App() {
         parts: [{ text: m.text }]
       }));
 
-      const systemInstruction = `You are an expert career coach at EnvisionPaths. 
+      const systemInstruction = `You are an expert career coach. 
       Conduct a realistic interview for a ${jobTitle} role. 
       ${!selectedPlan ? 'This is a free trial session, so keep the interview concise (max 5 questions total).' : ''}
       After the user answers a question, briefly acknowledge their answer with a "Coach's Tip" (in italics) 
@@ -214,7 +252,7 @@ export default function App() {
               </Tooltip>
               <Tooltip content="Sign out of your account" position="bottom">
                 <button 
-                  onClick={() => setStep('auth')}
+                  onClick={handleLogout}
                   aria-label="Logout"
                   className="text-white/60 hover:text-red-500 transition-colors"
                   title="Logout"
@@ -240,14 +278,14 @@ export default function App() {
               <div className="max-w-4xl w-full grid lg:grid-cols-2 gap-12 items-center">
                 <div className="space-y-8 text-center lg:text-left">
                   <div className="inline-block px-4 py-1.5 bg-red-600/10 border border-red-600/20 rounded-full">
-                    <p className="text-[10px] font-black text-red-500 uppercase tracking-[0.3em]">AI-Powered Career Intelligence</p>
+                    <p className="text-[10px] font-black text-red-500 uppercase tracking-[0.3em]">Professional Career Intelligence</p>
                   </div>
                   <h1 className="text-6xl sm:text-7xl font-black tracking-tighter uppercase italic leading-[0.9]">
                     Master Your <br />
                     <span className="text-red-500">Interview</span>
                   </h1>
                   <p className="text-zinc-300 text-lg max-w-md mx-auto lg:mx-0 leading-relaxed">
-                    The world's most advanced AI interview coach. Practice with industry-specific scenarios and get real-time feedback to land your dream job.
+                    Strategic interview preparation for modern professionals. Practice with industry-specific scenarios and get real-time feedback to land your dream job.
                   </p>
                   <div className="flex flex-wrap justify-center lg:justify-start gap-6 pt-4">
                     <div className="flex items-center gap-2">
@@ -269,10 +307,6 @@ export default function App() {
                   <div className="absolute -top-12 -right-12 w-64 h-64 bg-red-600/10 rounded-full blur-3xl -z-10" />
                   <div className="absolute -bottom-12 -left-12 w-64 h-64 bg-red-600/5 rounded-full blur-3xl -z-10" />
                   
-                  <div className="flex justify-center mb-8">
-                    <BrandLogo size={100} className="drop-shadow-[0_0_20px_rgba(220,38,38,0.3)]" />
-                  </div>
-                  
                   <div className="text-center mb-8">
                     <h2 className="text-3xl font-black tracking-tighter uppercase italic mb-2">
                       {authMode === 'login' ? 'Welcome Back' : 'Create Account'}
@@ -292,6 +326,8 @@ export default function App() {
                           type="email" 
                           required
                           placeholder="name@company.com"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
                           className="w-full pl-12 pr-4 py-4 bg-black border border-white/10 rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-all text-sm"
                         />
                       </div>
@@ -309,6 +345,8 @@ export default function App() {
                           type="password" 
                           required
                           placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
                           className="w-full pl-12 pr-4 py-4 bg-black border border-white/10 rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-all text-sm"
                         />
                       </div>
@@ -349,6 +387,18 @@ export default function App() {
                       Terms of Service
                     </button>
                   </div>
+                  {authMode === 'signup' && (
+                    <div className="flex flex-col items-center gap-1 mt-2">
+                      <p className="text-[9px] text-zinc-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <CheckCircle2 size={10} className="text-red-500" />
+                        No spam email. Ever.
+                      </p>
+                      <p className="text-[9px] text-zinc-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <CheckCircle2 size={10} className="text-red-500" />
+                        Cancel subscription anytime.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -420,6 +470,11 @@ export default function App() {
                     ? 'You have used your 2 free sessions for this month. Upgrade to continue.' 
                     : 'Choose the level of preparation required for your next move.'}
                 </p>
+                <div className="mt-4 inline-block px-4 py-1 bg-zinc-800/50 border border-white/5 rounded-full">
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.2em]">
+                    Cancel subscription anytime
+                  </p>
+                </div>
               </div>
 
               <div className="grid lg:grid-cols-3 gap-8">
@@ -440,7 +495,7 @@ export default function App() {
                     </li>
                     <li className="flex items-center gap-3 text-zinc-400 text-sm">
                       <CheckCircle2 size={18} className="text-zinc-400" />
-                      Basic AI Feedback
+                      Performance Metrics
                     </li>
                     <li className="flex items-center gap-3 text-zinc-400 text-sm">
                       <CheckCircle2 size={18} className="text-zinc-400" />
@@ -480,7 +535,7 @@ export default function App() {
                     </li>
                     <li className="flex items-center gap-3 text-zinc-300 text-sm">
                       <CheckCircle2 size={18} className="text-red-600" />
-                      Standard AI Feedback
+                      Detailed Feedback
                     </li>
                     <li className="flex items-center gap-3 text-zinc-300 text-sm">
                       <CheckCircle2 size={18} className="text-red-600" />
@@ -535,7 +590,7 @@ export default function App() {
                     </li>
                   </ul>
 
-                  <Tooltip content="Unlock advanced AI & video coaching">
+                  <Tooltip content="Unlock advanced coaching & video mode">
                     <button 
                       onClick={() => selectPlan('elite')}
                       className={`w-full py-4 font-black uppercase tracking-widest rounded-xl border transition-all shadow-lg ${
@@ -544,7 +599,7 @@ export default function App() {
                           : 'bg-red-600 hover:bg-red-700 text-white border-white/20 shadow-red-900/40'
                       }`}
                     >
-                      {selectedPlan === 'elite' ? 'Current Plan' : 'Get Premium'}
+                      {selectedPlan === 'elite' ? 'Current Plan' : 'Select Premium'}
                     </button>
                   </Tooltip>
                 </div>
@@ -718,7 +773,7 @@ export default function App() {
                 </form>
                 <div className="flex justify-between items-center mt-6 px-2">
                   <p className="text-[9px] text-zinc-400 uppercase tracking-[0.3em] font-black">
-                    EnvisionPaths Career Intelligence
+                    Career Intelligence
                   </p>
                   <div className="flex gap-2">
                     <div className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
@@ -740,7 +795,6 @@ export default function App() {
                 
                 <div className="relative z-10">
                   <div className="flex items-center gap-6 mb-12">
-                    <BrandLogo size={80} className="shadow-2xl shadow-red-900/40 border border-white/20 rounded-2xl" />
                     <div>
                       <h2 className="text-4xl font-black tracking-tighter uppercase italic">Performance Report</h2>
                       <p className="text-red-500 font-bold uppercase tracking-widest text-xs mt-1">{jobTitle}</p>

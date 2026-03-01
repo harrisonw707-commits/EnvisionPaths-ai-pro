@@ -46,7 +46,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({ size = 32, className = "" 
 export const BrandLogoText: React.FC = () => {
   return (
     <div className="flex items-center">
-      <BrandLogo size={300} className="drop-shadow-[0_0_15px_rgba(220,38,36,0.4)]" />
+      <BrandLogo size={200} className="drop-shadow-[0_0_10px_rgba(220,38,36,0.3)] opacity-80 hover:opacity-100 transition-opacity" />
     </div>
   );
 };
