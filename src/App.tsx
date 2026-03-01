@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { generateContent } from './services/aiService';
-import { BrandLogo, BrandLogoText } from './components/BrandLogo';
 import { Tooltip } from './components/Tooltip';
 import { Modal } from './components/Modal';
 
@@ -226,7 +225,11 @@ export default function App() {
       {step !== 'auth' && (
         <header className="sticky top-0 z-10 bg-black/80 backdrop-blur-md border-b border-white/10 px-6 py-4">
           <div className="max-w-5xl mx-auto flex items-center justify-between">
-            <BrandLogoText />
+            <div className="flex items-center">
+              <span className="text-xl font-black tracking-tighter uppercase italic">
+                Envision<span className="text-red-500">Paths</span>
+              </span>
+            </div>
             
             <div className="flex items-center gap-4">
               {step === 'interview' && (
