@@ -78,7 +78,8 @@ const migrations = [
   "ALTER TABLE users ADD COLUMN plan_type TEXT DEFAULT 'free'",
   "ALTER TABLE users ADD COLUMN plan_start_date DATETIME DEFAULT CURRENT_TIMESTAMP",
   "ALTER TABLE simulations ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
-  "ALTER TABLE simulations ADD COLUMN status TEXT DEFAULT 'completed'"
+  "ALTER TABLE simulations ADD COLUMN status TEXT DEFAULT 'completed'",
+  "CREATE INDEX IF NOT EXISTS idx_simulations_user_id ON simulations(user_id)"
 ];
 
 for (const migration of migrations) {
@@ -122,13 +123,30 @@ async function startServer() {
   // Auth Middleware
   const getSessionUser = (req: express.Request) => {
     const sessionId = req.cookies.session_id;
-    if (!sessionId) return null;
+    if (!sessionId) {
+      console.log('[AUTH] No session_id cookie found');
+      return null;
+    }
     const session = db.prepare('SELECT user_id FROM sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP').get(sessionId) as { user_id: number } | undefined;
-    if (!session) return null;
-    return db.prepare('SELECT id, email, plan_type, plan_start_date, is_admin, two_factor_enabled FROM users WHERE id = ?').get(session.user_id) as { id: number, email: string, plan_type: string, plan_start_date: string, is_admin: number, two_factor_enabled: number };
+    if (!session) {
+      console.log(`[AUTH] Session not found or expired: ${sessionId}`);
+      return null;
+    }
+    const user = db.prepare('SELECT id, email, plan_type, plan_start_date, is_admin, two_factor_enabled FROM users WHERE id = ?').get(session.user_id) as { id: number, email: string, plan_type: string, plan_start_date: string, is_admin: number, two_factor_enabled: number };
+    if (user) {
+      console.log(`[AUTH] User authenticated: ${user.email} (Admin: ${!!user.is_admin})`);
+    }
+    return user;
   };
 
   // API Routes
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      console.log(`[API] ${req.method} ${req.path}`);
+    }
+    next();
+  });
+
   app.post('/api/auth/admin-bypass', (req, res) => {
     const { email } = req.body;
     if (email !== 'harrisonw707@gmail.com') {
@@ -190,17 +208,21 @@ async function startServer() {
     const { email, password } = req.body;
     const user = db.prepare('SELECT id, email, password, plan_type, two_factor_enabled FROM users WHERE email = ?').get(email) as { id: number, email: string, password: string, plan_type: string, two_factor_enabled: number } | undefined;
     
-    if (user && await bcrypt.compare(password, user.password)) {
-      if (user.two_factor_enabled) {
-        return res.json({ success: true, requires_2fa: true, user_id: user.id });
+    if (user) {
+      console.log(`[LOGIN] User found: ${email}, comparing password...`);
+      const isMatch = await bcrypt.compare(password, user.password);
+      console.log(`[LOGIN] Password match: ${isMatch}`);
+      if (isMatch) {
+        if (user.two_factor_enabled) {
+          return res.json({ success: true, requires_2fa: true, user_id: user.id });
+        }
+        const sessionId = Math.random().toString(36).substring(2);
+        db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
+        res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
+        return res.json({ success: true, user: { email: user.email, plan_type: user.plan_type } });
       }
-      const sessionId = Math.random().toString(36).substring(2);
-      db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
-      res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
-      res.json({ success: true, user: { email: user.email, plan_type: user.plan_type } });
-    } else {
-      res.status(401).json({ error: 'Invalid credentials' });
     }
+    res.status(401).json({ error: 'Invalid credentials' });
   });
 
   app.post('/api/auth/login-2fa', (req, res) => {
@@ -284,11 +306,14 @@ async function startServer() {
   });
 
   app.get('/api/user/profile', (req, res) => {
+    console.log('[PROFILE] Fetching profile...');
     const user = getSessionUser(req);
     if (user) {
+      console.log(`[PROFILE] Found user: ${user.email}`);
       const simulationsCount = db.prepare("SELECT COUNT(*) as count FROM simulations WHERE user_id = ? AND created_at > date('now', 'start of month')").get(user.id) as { count: number };
       res.json({ user: { ...user, simulations_this_month: simulationsCount.count } });
     } else {
+      console.log('[PROFILE] No user found in session');
       res.status(401).json({ error: 'Not authenticated' });
     }
   });
