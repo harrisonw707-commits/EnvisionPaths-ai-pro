@@ -36,7 +36,7 @@ type AppStep = 'auth' | 'pricing' | 'setup' | 'interview' | 'summary';
 
 export default function App() {
   const [step, setStep] = useState<AppStep>('auth');
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
   const [selectedPlan, setSelectedPlan] = useState<'pro' | 'elite' | null>(null);
   const [sessionsUsed, setSessionsUsed] = useState(0);
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
@@ -314,7 +314,11 @@ export default function App() {
                     <h2 className="text-3xl font-black tracking-tighter uppercase italic mb-2">
                       {authMode === 'login' ? 'Welcome Back' : 'Create Account'}
                     </h2>
-                    <p className="text-zinc-300 text-sm">Enter your credentials to access the platform.</p>
+                    <p className="text-zinc-300 text-sm">
+                      {authMode === 'login' 
+                        ? 'Enter your credentials to access the platform.' 
+                        : 'Join the elite community of modern professionals.'}
+                    </p>
                   </div>
 
                 <form onSubmit={handleAuth} className="space-y-5">
