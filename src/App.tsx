@@ -37,7 +37,7 @@ type AppStep = 'auth' | 'pricing' | 'setup' | 'interview' | 'summary';
 export default function App() {
   const [step, setStep] = useState<AppStep>('auth');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
-  const [selectedPlan, setSelectedPlan] = useState<'pro' | 'elite' | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<'beginner' | 'pro' | 'elite' | null>(null);
   const [sessionsUsed, setSessionsUsed] = useState(0);
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
   const [isTermsOpen, setIsTermsOpen] = useState(false);
@@ -50,6 +50,24 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [jobTitle, setJobTitle] = useState('');
   const [industry, setIndustry] = useState('');
+
+  const suggestedRoles: Record<string, string[]> = {
+    'Construction': ['Site Supervisor', 'Electrician', 'Plumber', 'HVAC Technician', 'Heavy Equipment Operator', 'Carpenter', 'Mason', 'Ironworker', 'Surveyor', 'Project Coordinator'],
+    'Manufacturing': ['Production Manager', 'Quality Control Inspector', 'CNC Machinist', 'Welder', 'Assembly Line Lead', 'Safety Coordinator', 'Millwright', 'Industrial Electrician', 'Tool and Die Maker', 'Maintenance Mechanic'],
+    'Logistics': ['Warehouse Manager', 'Fleet Supervisor', 'Supply Chain Coordinator', 'Forklift Driver', 'Picker Packer', 'Inventory Specialist', 'Delivery Lead', 'Dispatcher', 'Logistics Analyst', 'Operations Lead'],
+    'Energy': ['Solar Panel Installer', 'Wind Turbine Technician', 'Power Plant Operator', 'Utility Lineworker', 'Field Engineer', 'Safety Officer', 'Drilling Supervisor', 'Pipefitter', 'Geologist', 'Instrumentation Tech'],
+    'Hospitality': ['Executive Chef', 'Line Cook', 'Prep Cook', 'Hotel Manager', 'Front Desk Supervisor', 'Maintenance Lead', 'Janitor', 'Housekeeping Manager', 'Sous Chef', 'Event Coordinator'],
+    'Technology': ['Software Engineer', 'Product Manager', 'Data Scientist', 'DevOps Engineer', 'UI/UX Designer', 'IT Support Specialist'],
+    'Finance': ['Investment Banker', 'Financial Analyst', 'Accountant', 'Risk Manager', 'Portfolio Manager', 'Loan Officer'],
+    'Healthcare': ['Registered Nurse', 'Medical Assistant', 'Healthcare Administrator', 'Lab Technician', 'Physical Therapist', 'Pharmacist'],
+    'Defense': ['Aerospace Engineer', 'Systems Analyst', 'Project Manager', 'Security Specialist', 'Logistics Analyst', 'Technical Writer'],
+    'Marketing': ['Marketing Manager', 'Content Strategist', 'SEO Specialist', 'Brand Manager', 'Social Media Lead', 'Digital Analyst'],
+    'Agriculture': ['Farm Manager', 'Agricultural Mechanic', 'Greenhouse Supervisor', 'Irrigation Specialist', 'Livestock Manager', 'Crop Consultant'],
+    'Automotive': ['Service Manager', 'Master Technician', 'Body Shop Lead', 'Parts Coordinator', 'Fleet Mechanic', 'Diagnostic Specialist'],
+    'PublicSafety': ['Fire Captain', 'Police Sergeant', 'EMS Supervisor', '911 Dispatcher', 'Security Manager', 'Emergency Coordinator'],
+    'GeneralServices': ['Janitor', 'Security Guard', 'Customer Service', 'Retail Associate', 'Stock Clerk', 'Groundskeeper', 'Maintenance Worker', 'Custodian']
+  };
+
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -667,6 +685,27 @@ export default function App() {
                     </Tooltip>
                   </div>
 
+                  {industry && suggestedRoles[industry] && (
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Suggested Roles</label>
+                      <div className="flex flex-wrap gap-2">
+                        {suggestedRoles[industry].map((role) => (
+                          <button
+                            key={role}
+                            onClick={() => setJobTitle(role)}
+                            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all border ${
+                              jobTitle === role 
+                                ? 'bg-red-600 border-red-500 text-white' 
+                                : 'bg-zinc-900 border-white/10 text-zinc-400 hover:border-red-500/50 hover:text-zinc-200'
+                            }`}
+                          >
+                            {role}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-3">
                     <label htmlFor="industry" className="text-[10px] font-bold uppercase tracking-widest text-red-500 ml-1">Industry Sector</label>
                     <Tooltip content="Tailors the AI's industry knowledge" position="right">
@@ -686,6 +725,10 @@ export default function App() {
                         <option value="Logistics">Logistics & Transportation</option>
                         <option value="Energy">Energy & Utilities</option>
                         <option value="Hospitality">Hospitality & Service</option>
+                        <option value="Agriculture">Agriculture & Farming</option>
+                        <option value="Automotive">Automotive & Repair</option>
+                        <option value="PublicSafety">Public Safety & Emergency</option>
+                        <option value="GeneralServices">General Services & Maintenance</option>
                         <option value="Defense">Defense & Aerospace</option>
                         <option value="Marketing">Marketing</option>
                       </select>
