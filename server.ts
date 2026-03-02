@@ -69,6 +69,7 @@ db.exec(`
 `);
 
 // Database Migrations: Ensure columns exist for existing databases
+console.log('[SERVER] Running migrations...');
 const migrations = [
   "ALTER TABLE users ADD COLUMN two_factor_secret TEXT",
   "ALTER TABLE users ADD COLUMN two_factor_enabled BOOLEAN DEFAULT 0",
@@ -81,24 +82,28 @@ const migrations = [
 for (const migration of migrations) {
   try {
     db.exec(migration);
+    console.log(`[SERVER] Migration successful: ${migration.substring(0, 30)}...`);
   } catch (e: any) {
     // Ignore "duplicate column name" errors
     if (!e.message.includes('duplicate column name')) {
-      console.warn(`Migration failed: ${migration}`, e.message);
+      console.warn(`[SERVER] Migration failed: ${migration}`, e.message);
     }
   }
 }
 
 // Ensure harrisonw707@gmail.com is an admin
+console.log('[SERVER] Ensuring admin user...');
 try {
   db.prepare("UPDATE users SET is_admin = 1 WHERE email = 'harrisonw707@gmail.com'").run();
 } catch (e) {
-  console.warn("Could not promote admin user (might not exist yet):", e);
+  console.warn("[SERVER] Could not promote admin user:", e);
 }
 
-import * as speakeasy from 'speakeasy';
+import speakeasy from 'speakeasy';
 import QRCode from 'qrcode';
 import bcrypt from 'bcrypt';
+
+console.log('[SERVER] Starting initialization...');
 
 async function startServer() {
   const app = express();
@@ -106,6 +111,11 @@ async function startServer() {
 
   app.use(express.json());
   app.use(cookieParser());
+
+  // Health check
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
 
   // Auth Middleware
   const getSessionUser = (req: express.Request) => {
@@ -121,13 +131,31 @@ async function startServer() {
     const { email, password } = req.body;
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
-      const result = db.prepare('INSERT INTO users (email, password) VALUES (?, ?)').run(email, hashedPassword);
+      let userId: number | bigint;
+      try {
+        const result = db.prepare('INSERT INTO users (email, password) VALUES (?, ?)').run(email, hashedPassword);
+        userId = result.lastInsertRowid;
+      } catch (e: any) {
+        if (e.message.includes('UNIQUE')) {
+          // If it's the primary user, allow them to "reset" by signing up again
+          if (email === 'harrisonw707@gmail.com') {
+            db.prepare('UPDATE users SET password = ? WHERE email = ?').run(hashedPassword, email);
+            const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: number };
+            userId = user.id;
+          } else {
+            return res.status(400).json({ error: 'Email already exists. Please sign in.' });
+          }
+        } else {
+          throw e;
+        }
+      }
+      
       const sessionId = Math.random().toString(36).substring(2);
-      db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, result.lastInsertRowid);
+      db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, userId);
       res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
       res.json({ success: true, user: { email, plan_type: 'free' } });
     } catch (e: any) {
-      res.status(400).json({ error: e.message.includes('UNIQUE') ? 'Email already exists' : 'Signup failed' });
+      res.status(400).json({ error: 'Signup failed' });
     }
   });
 
@@ -167,6 +195,25 @@ async function startServer() {
       res.json({ success: true, user: { email: user.email, plan_type: user.plan_type } });
     } else {
       res.status(401).json({ error: 'Invalid 2FA code' });
+    }
+  });
+
+  app.post('/api/admin/reset-db', async (req, res) => {
+    const user = getSessionUser(req);
+    if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+
+    try {
+      // Clear all tables except users (to keep the admin logged in)
+      db.prepare('DELETE FROM sessions WHERE user_id != ?').run(user.id);
+      db.prepare('DELETE FROM simulations').run();
+      db.prepare('DELETE FROM processed_payments').run();
+      
+      // Reset the admin's own state if needed
+      db.prepare('UPDATE users SET plan_type = \'free\', two_factor_enabled = 0, two_factor_secret = NULL WHERE id = ?').run(user.id);
+      
+      res.json({ success: true, message: 'Database reset successfully. You remain logged in.' });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 
