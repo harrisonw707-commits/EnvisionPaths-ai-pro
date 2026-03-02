@@ -42,8 +42,12 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  // Ensure harrisonw707@gmail.com is an admin
-  db.prepare("UPDATE users SET is_admin = 1 WHERE email = 'harrisonw707@gmail.com'").run();
+  CREATE TABLE IF NOT EXISTS processed_payments (
+    session_id TEXT PRIMARY KEY,
+    user_id INTEGER,
+    plan_type TEXT,
+    processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 
   CREATE TABLE IF NOT EXISTS simulations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,14 +66,35 @@ db.exec(`
     expires_at DATETIME,
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
-
-  CREATE TABLE IF NOT EXISTS processed_payments (
-    session_id TEXT PRIMARY KEY,
-    user_id INTEGER,
-    plan_type TEXT,
-    processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
 `);
+
+// Database Migrations: Ensure columns exist for existing databases
+const migrations = [
+  "ALTER TABLE users ADD COLUMN two_factor_secret TEXT",
+  "ALTER TABLE users ADD COLUMN two_factor_enabled BOOLEAN DEFAULT 0",
+  "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0",
+  "ALTER TABLE users ADD COLUMN stripe_customer_id TEXT",
+  "ALTER TABLE users ADD COLUMN plan_type TEXT DEFAULT 'free'",
+  "ALTER TABLE users ADD COLUMN plan_start_date DATETIME DEFAULT CURRENT_TIMESTAMP"
+];
+
+for (const migration of migrations) {
+  try {
+    db.exec(migration);
+  } catch (e: any) {
+    // Ignore "duplicate column name" errors
+    if (!e.message.includes('duplicate column name')) {
+      console.warn(`Migration failed: ${migration}`, e.message);
+    }
+  }
+}
+
+// Ensure harrisonw707@gmail.com is an admin
+try {
+  db.prepare("UPDATE users SET is_admin = 1 WHERE email = 'harrisonw707@gmail.com'").run();
+} catch (e) {
+  console.warn("Could not promote admin user (might not exist yet):", e);
+}
 
 import * as speakeasy from 'speakeasy';
 import QRCode from 'qrcode';
