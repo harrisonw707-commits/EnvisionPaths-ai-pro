@@ -76,7 +76,9 @@ const migrations = [
   "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0",
   "ALTER TABLE users ADD COLUMN stripe_customer_id TEXT",
   "ALTER TABLE users ADD COLUMN plan_type TEXT DEFAULT 'free'",
-  "ALTER TABLE users ADD COLUMN plan_start_date DATETIME DEFAULT CURRENT_TIMESTAMP"
+  "ALTER TABLE users ADD COLUMN plan_start_date DATETIME DEFAULT CURRENT_TIMESTAMP",
+  "ALTER TABLE simulations ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
+  "ALTER TABLE simulations ADD COLUMN status TEXT DEFAULT 'completed'"
 ];
 
 for (const migration of migrations) {
@@ -294,39 +296,88 @@ async function startServer() {
   app.get('/api/simulations/history', (req, res) => {
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
-    const history = db.prepare('SELECT id, job_title, industry, score, feedback, created_at FROM simulations WHERE user_id = ? ORDER BY created_at DESC').all(user.id);
+    const history = db.prepare("SELECT id, job_title, industry, score, feedback, created_at FROM simulations WHERE user_id = ? AND status = 'completed' ORDER BY created_at DESC").all(user.id);
     res.json({ history });
   });
 
   app.post('/api/simulations/start', (req, res) => {
+    console.log(`[SIMULATION] Start request received for user...`);
+    try {
+      const user = getSessionUser(req);
+      if (!user) {
+        console.warn('[SIMULATION] Start failed: Not authenticated');
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      const { job_title, industry } = req.body;
+
+      console.log(`[SIMULATION] Starting for user ${user.id} (${user.email}) - Plan: ${user.plan_type}`);
+
+      // Plan Gating Logic (Count started and completed simulations, but not glitched ones)
+      if (user.plan_type === 'free') {
+        const count = db.prepare("SELECT COUNT(*) as count FROM simulations WHERE user_id = ? AND status IN ('started', 'completed') AND created_at > date('now', 'start of month')").get(user.id) as { count: number };
+        console.log(`[SIMULATION] User ${user.id} has ${count.count} active simulations this month`);
+        if (count.count >= 2) {
+          return res.status(403).json({ error: 'Free limit reached. Upgrade for more simulations.' });
+        }
+      } else if (user.plan_type === 'beginner') {
+        const startDate = new Date(user.plan_start_date || Date.now());
+        const now = new Date();
+        const diffDays = Math.ceil((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+        console.log(`[SIMULATION] User ${user.id} beginner plan age: ${diffDays} days`);
+        if (diffDays > 30) {
+          // Downgrade to free if 30 days passed
+          console.log(`[SIMULATION] Downgrading user ${user.id} to free plan`);
+          db.prepare('UPDATE users SET plan_type = "free" WHERE id = ?').run(user.id);
+          return res.status(403).json({ error: 'Beginner plan expired. Please upgrade.' });
+        }
+      }
+
+      // Create a "started" record to track the session
+      const result = db.prepare('INSERT INTO simulations (user_id, job_title, industry, status) VALUES (?, ?, ?, ?)').run(user.id, job_title || 'Unknown', industry || 'Unknown', 'started');
+      const simulationId = result.lastInsertRowid;
+
+      console.log(`[SIMULATION] Simulation ${simulationId} started for user ${user.id}`);
+      res.json({ success: true, simulation_id: simulationId });
+    } catch (e: any) {
+      console.error(`[SIMULATION START ERROR] ${e.message}`, e.stack);
+      res.status(500).json({ error: 'Failed to start simulation: ' + e.message });
+    }
+  });
+
+  app.post('/api/simulations/report-glitch', (req, res) => {
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
+    
+    const { simulation_id } = req.body;
+    if (!simulation_id) return res.status(400).json({ error: 'Simulation ID required' });
 
-    // Plan Gating Logic
-    if (user.plan_type === 'free') {
-      const count = db.prepare("SELECT COUNT(*) as count FROM simulations WHERE user_id = ? AND created_at > date('now', 'start of month')").get(user.id) as { count: number };
-      if (count.count >= 2) {
-        return res.status(403).json({ error: 'Free limit reached. Upgrade for more simulations.' });
+    try {
+      // Mark the simulation as glitched so it doesn't count
+      const result = db.prepare("UPDATE simulations SET status = 'glitched' WHERE id = ? AND user_id = ? AND status = 'started'").run(simulation_id, user.id);
+      
+      if (result.changes > 0) {
+        console.log(`[SIMULATION] Simulation ${simulation_id} marked as glitched by user ${user.id}`);
+        res.json({ success: true, message: 'Glitch reported. This session has been refunded.' });
+      } else {
+        res.status(400).json({ error: 'Could not report glitch for this session. It may already be completed or not found.' });
       }
-    } else if (user.plan_type === 'beginner') {
-      const startDate = new Date(user.plan_start_date);
-      const now = new Date();
-      const diffDays = Math.ceil((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-      if (diffDays > 30) {
-        // Downgrade to free if 30 days passed
-        db.prepare('UPDATE users SET plan_type = "free" WHERE id = ?').run(user.id);
-        return res.status(403).json({ error: 'Beginner plan expired. Please upgrade.' });
-      }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
-
-    res.json({ success: true });
   });
 
   app.post('/api/simulations/complete', (req, res) => {
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
-    const { job_title, industry, score, feedback } = req.body;
-    db.prepare('INSERT INTO simulations (user_id, job_title, industry, score, feedback) VALUES (?, ?, ?, ?, ?)').run(user.id, job_title, industry, score, feedback);
+    const { simulation_id, job_title, industry, score, feedback } = req.body;
+    
+    if (simulation_id) {
+      db.prepare("UPDATE simulations SET job_title = ?, industry = ?, score = ?, feedback = ?, status = 'completed' WHERE id = ? AND user_id = ?").run(job_title, industry, score, feedback, simulation_id, user.id);
+    } else {
+      // Fallback for older clients
+      db.prepare("INSERT INTO simulations (user_id, job_title, industry, score, feedback, status) VALUES (?, ?, ?, ?, ?, 'completed')").run(user.id, job_title, industry, score, feedback);
+    }
     res.json({ success: true });
   });
 
@@ -477,6 +528,11 @@ async function startServer() {
     }
   });
 
+  // Catch-all for unknown API routes to prevent falling through to SPA fallback
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -502,6 +558,15 @@ async function startServer() {
       res.sendFile(path.join(__dirname, 'dist', 'index.html'));
     });
   }
+
+  // Global Error Handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('[GLOBAL ERROR]', err);
+    if (res.headersSent) return next(err);
+    res.status(err.status || 500).json({ 
+      error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message 
+    });
+  });
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on http://localhost:${PORT}`);
