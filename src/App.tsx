@@ -67,6 +67,13 @@ export default function App() {
     }
   }, []);
 
+  useEffect(() => {
+    const currentUser = JSON.parse(localStorage.getItem('envision_current_user') || 'null');
+    if (currentUser && currentUser.email === 'harrisonw707@gmail.com') {
+      setSelectedPlan('elite');
+    }
+  }, [step]);
+
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -85,11 +92,19 @@ export default function App() {
       storedUsers.push(newUser);
       localStorage.setItem('envision_users', JSON.stringify(storedUsers));
       localStorage.setItem('envision_current_user', JSON.stringify(newUser));
-      setStep('pricing');
+      if (email === 'harrisonw707@gmail.com') {
+        setSelectedPlan('elite');
+        setStep('setup');
+      } else {
+        setStep('pricing');
+      }
     } else {
       const user = storedUsers.find((u: any) => u.email === email && u.password === password);
       if (user) {
         localStorage.setItem('envision_current_user', JSON.stringify(user));
+        if (email === 'harrisonw707@gmail.com') {
+          setSelectedPlan('elite');
+        }
         setStep('setup');
       } else {
         alert('Invalid email or password. Please check your credentials or sign up.');
@@ -324,7 +339,7 @@ export default function App() {
                 <form onSubmit={handleAuth} className="space-y-5">
                   <div className="space-y-2">
                     <label htmlFor="email" className="text-[10px] font-bold uppercase tracking-widest text-zinc-300 ml-1">Email Address</label>
-                    <Tooltip content="Enter your registered email" position="right">
+                    <Tooltip content={authMode === 'login' ? "Enter your registered email" : "Enter your professional email"} position="right">
                       <div className="relative">
                         <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
                         <input 
@@ -360,7 +375,7 @@ export default function App() {
                     </Tooltip>
                   </div>
 
-                  <Tooltip content="Securely access your dashboard">
+                  <Tooltip content={authMode === 'login' ? "Securely access your dashboard" : "Join the Envision community"}>
                     <button 
                       type="submit"
                       className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] py-5 rounded-xl transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2 border border-white/20 group"
@@ -643,7 +658,7 @@ export default function App() {
                           id="jobTitle"
                           name="jobTitle"
                           type="text" 
-                          placeholder="e.g. Director of Engineering"
+                          placeholder="e.g. Site Supervisor or Electrician"
                           value={jobTitle}
                           onChange={(e) => setJobTitle(e.target.value)}
                           className="w-full pl-12 pr-4 py-5 bg-black border border-white/10 rounded-2xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-lg font-medium"
@@ -666,6 +681,11 @@ export default function App() {
                         <option value="Technology">Technology</option>
                         <option value="Finance">Finance</option>
                         <option value="Healthcare">Healthcare</option>
+                        <option value="Construction">Construction & Trades</option>
+                        <option value="Manufacturing">Manufacturing</option>
+                        <option value="Logistics">Logistics & Transportation</option>
+                        <option value="Energy">Energy & Utilities</option>
+                        <option value="Hospitality">Hospitality & Service</option>
                         <option value="Defense">Defense & Aerospace</option>
                         <option value="Marketing">Marketing</option>
                       </select>
