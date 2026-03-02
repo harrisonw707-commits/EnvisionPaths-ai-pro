@@ -122,9 +122,9 @@ async function startServer() {
 
   // Auth Middleware
   const getSessionUser = (req: express.Request) => {
-    const sessionId = req.cookies.session_id;
+    const sessionId = req.cookies.session_id || req.headers['x-session-id'];
     if (!sessionId) {
-      console.log('[AUTH] No session_id cookie found');
+      console.log('[AUTH] No session_id found in cookies or headers');
       return null;
     }
     const session = db.prepare('SELECT user_id FROM sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP').get(sessionId) as { user_id: number } | undefined;
@@ -166,7 +166,7 @@ async function startServer() {
       const sessionId = Math.random().toString(36).substring(2);
       db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
       res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
-      res.json({ success: true });
+      res.json({ success: true, sessionId });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -219,7 +219,7 @@ async function startServer() {
         const sessionId = Math.random().toString(36).substring(2);
         db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
         res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
-        return res.json({ success: true, user: { email: user.email, plan_type: user.plan_type } });
+        return res.json({ success: true, user: { email: user.email, plan_type: user.plan_type }, sessionId });
       }
     }
     res.status(401).json({ error: 'Invalid credentials' });
