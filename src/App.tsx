@@ -20,7 +20,24 @@ import {
   ArrowRight,
   LogOut,
   CreditCard,
-  Download
+  Download,
+  HardHat,
+  Factory,
+  Truck,
+  Zap,
+  Utensils,
+  Monitor,
+  DollarSign,
+  Stethoscope,
+  Shield,
+  Megaphone,
+  Sprout,
+  Car,
+  Siren,
+  Wrench,
+  Clock,
+  History,
+  Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { generateContent } from './services/aiService';
@@ -34,6 +51,12 @@ interface Message {
 }
 
 type AppStep = 'auth' | 'pricing' | 'setup' | 'interview' | 'summary';
+
+declare global {
+  interface Window {
+    gtag: (...args: any[]) => void;
+  }
+}
 
 export default function App() {
   const [step, setStep] = useState<AppStep>('auth');
@@ -53,72 +76,15 @@ export default function App() {
   const [industry, setIndustry] = useState('');
   const [lastAlertCount, setLastAlertCount] = useState<number>(0);
   const [isAnnual, setIsAnnual] = useState(false);
+  const [history, setHistory] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const suggestedRoles: Record<string, string[]> = {
-    'Construction': ['Site Supervisor', 'Electrician', 'Plumber', 'HVAC Technician', 'Heavy Equipment Operator', 'Carpenter', 'Mason', 'Ironworker', 'Surveyor', 'Project Coordinator'],
-    'Manufacturing': ['Production Manager', 'Quality Control Inspector', 'CNC Machinist', 'Welder', 'Assembly Line Lead', 'Safety Coordinator', 'Millwright', 'Industrial Electrician', 'Tool and Die Maker', 'Maintenance Mechanic'],
-    'Logistics': ['Warehouse Manager', 'Fleet Supervisor', 'Supply Chain Coordinator', 'Forklift Driver', 'Picker Packer', 'Inventory Specialist', 'Delivery Lead', 'Dispatcher', 'Logistics Analyst', 'Operations Lead'],
-    'Energy': ['Solar Panel Installer', 'Wind Turbine Technician', 'Power Plant Operator', 'Utility Lineworker', 'Field Engineer', 'Safety Officer', 'Drilling Supervisor', 'Pipefitter', 'Geologist', 'Instrumentation Tech'],
-    'Hospitality': ['Executive Chef', 'Line Cook', 'Prep Cook', 'Hotel Manager', 'Front Desk Supervisor', 'Maintenance Lead', 'Janitor', 'Housekeeping Manager', 'Sous Chef', 'Event Coordinator'],
-    'Technology': ['Software Engineer', 'Product Manager', 'Data Scientist', 'DevOps Engineer', 'UI/UX Designer', 'IT Support Specialist'],
-    'Finance': ['Investment Banker', 'Financial Analyst', 'Accountant', 'Risk Manager', 'Portfolio Manager', 'Loan Officer'],
-    'Healthcare': ['Registered Nurse', 'Medical Assistant', 'Healthcare Administrator', 'Lab Technician', 'Physical Therapist', 'Pharmacist'],
-    'Defense': ['Aerospace Engineer', 'Systems Analyst', 'Project Manager', 'Security Specialist', 'Logistics Analyst', 'Technical Writer'],
-    'Marketing': ['Marketing Manager', 'Content Strategist', 'SEO Specialist', 'Brand Manager', 'Social Media Lead', 'Digital Analyst'],
-    'Agriculture': ['Farm Manager', 'Agricultural Mechanic', 'Greenhouse Supervisor', 'Irrigation Specialist', 'Livestock Manager', 'Crop Consultant'],
-    'Automotive': ['Service Manager', 'Master Technician', 'Body Shop Lead', 'Parts Coordinator', 'Fleet Mechanic', 'Diagnostic Specialist'],
-    'PublicSafety': ['Fire Captain', 'Police Sergeant', 'EMS Supervisor', '911 Dispatcher', 'Security Manager', 'Emergency Coordinator'],
-    'GeneralServices': ['Janitor', 'Security Guard', 'Customer Service', 'Retail Associate', 'Stock Clerk', 'Groundskeeper', 'Maintenance Worker', 'Custodian']
+  const trackEvent = (name: string, params?: any) => {
+    if (window.gtag) {
+      window.gtag('event', name, params);
+    }
+    console.log(`[GA4 EVENT]: ${name}`, params);
   };
-
-  const chatEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isTyping]);
-
-  useEffect(() => {
-    const currentUser = localStorage.getItem('envision_current_user');
-    if (currentUser) {
-      setStep('setup');
-    }
-  }, []);
-
-  useEffect(() => {
-    const currentUser = JSON.parse(localStorage.getItem('envision_current_user') || 'null');
-    if (currentUser && currentUser.email === 'harrisonw707@gmail.com') {
-      setSelectedPlan('elite');
-    }
-  }, [step]);
-
-  // Email and In-App Alert Logic for Free Plan
-  useEffect(() => {
-    const isFree = !selectedPlan || selectedPlan === 'free';
-    if (!isFree || sessionsUsed === lastAlertCount) return;
-
-    const currentUser = JSON.parse(localStorage.getItem('envision_current_user') || 'null');
-    const userEmail = currentUser?.email || email || 'User';
-
-    if (sessionsUsed === 1) {
-      // Mock email alert when 1 simulation remains
-      console.log('%c--- EMAIL ALERT ---', 'color: #ef4444; font-weight: bold;');
-      console.log(`To: ${userEmail}`);
-      console.log('Subject: Ready for more practice?');
-      console.log('Body: You have 1 free simulation remaining for this month. Keep sharpening your skills!');
-      console.log('-------------------');
-    } else if (sessionsUsed === 2) {
-      // In-app message/log when limit is reached
-      console.log('%c--- IN-APP ALERT ---', 'color: #ef4444; font-weight: bold;');
-      console.log('Limit Reached: Ready for more practice? Upgrade to continue.');
-      console.log('---------------------');
-    }
-    
-    setLastAlertCount(sessionsUsed);
-  }, [sessionsUsed, selectedPlan, email, lastAlertCount]);
 
   const exportTranscript = () => {
     const transcript = `ENVISIONPATHS INTERVIEW TRANSCRIPT
@@ -147,64 +113,135 @@ Generated by EnvisionPaths Career Intelligence`;
     URL.revokeObjectURL(url);
   };
 
-  const handleAuth = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Simple localStorage based auth for prototype
-    const storedUsers = JSON.parse(localStorage.getItem('envision_users') || '[]');
-    
-    if (authMode === 'signup') {
-      const userExists = storedUsers.find((u: any) => u.email === email);
-      if (userExists) {
-        alert('An account with this email already exists. Please sign in.');
-        setAuthMode('login');
-        return;
-      }
-      
-      const newUser = { email, password, createdAt: new Date().toISOString() };
-      storedUsers.push(newUser);
-      localStorage.setItem('envision_users', JSON.stringify(storedUsers));
-      localStorage.setItem('envision_current_user', JSON.stringify(newUser));
-      if (email === 'harrisonw707@gmail.com') {
-        setSelectedPlan('elite');
-        setStep('setup');
-      } else {
-        setStep('pricing');
-      }
-    } else {
-      const user = storedUsers.find((u: any) => u.email === email && u.password === password);
-      if (user) {
-        localStorage.setItem('envision_current_user', JSON.stringify(user));
-        if (email === 'harrisonw707@gmail.com') {
-          setSelectedPlan('elite');
+  const suggestedRoles: Record<string, string[]> = {
+    'Construction': ['Site Supervisor', 'Electrician', 'Plumber', 'HVAC Technician', 'Heavy Equipment Operator', 'Carpenter', 'Mason', 'Ironworker', 'Surveyor', 'Project Coordinator', 'Drywaller', 'Roofer', 'Pipefitter', 'Crane Operator'],
+    'Manufacturing': ['Production Manager', 'Quality Control Inspector', 'CNC Machinist', 'Welder', 'Assembly Line Lead', 'Safety Coordinator', 'Millwright', 'Industrial Electrician', 'Tool and Die Maker', 'Maintenance Mechanic', 'Forklift Operator', 'Machine Operator'],
+    'Logistics': ['Warehouse Manager', 'Fleet Supervisor', 'Supply Chain Coordinator', 'Forklift Driver', 'Picker Packer', 'Inventory Specialist', 'Delivery Lead', 'Dispatcher', 'Logistics Analyst', 'Operations Lead', 'Truck Driver (CDL)', 'Warehouse Associate'],
+    'Energy': ['Solar Panel Installer', 'Wind Turbine Technician', 'Power Plant Operator', 'Utility Lineworker', 'Field Engineer', 'Safety Officer', 'Drilling Supervisor', 'Pipefitter', 'Geologist', 'Instrumentation Tech', 'Lineman', 'Substation Technician'],
+    'Hospitality': ['Executive Chef', 'Line Cook', 'Prep Cook', 'Hotel Manager', 'Front Desk Supervisor', 'Maintenance Lead', 'Janitor', 'Housekeeping Manager', 'Sous Chef', 'Event Coordinator', 'Bartender', 'Server', 'Dishwasher'],
+    'Technology': ['Software Engineer', 'Product Manager', 'Data Scientist', 'DevOps Engineer', 'UI/UX Designer', 'IT Support Specialist', 'Cybersecurity Analyst', 'Cloud Architect'],
+    'Finance': ['Investment Banker', 'Financial Analyst', 'Accountant', 'Risk Manager', 'Portfolio Manager', 'Loan Officer', 'Tax Specialist', 'Auditor'],
+    'Healthcare': ['Registered Nurse', 'Medical Assistant', 'Healthcare Administrator', 'Lab Technician', 'Physical Therapist', 'Pharmacist', 'Dental Hygienist', 'Radiologic Tech'],
+    'Defense': ['Aerospace Engineer', 'Systems Analyst', 'Project Manager', 'Security Specialist', 'Logistics Analyst', 'Technical Writer', 'Intelligence Analyst'],
+    'Marketing': ['Marketing Manager', 'Content Strategist', 'SEO Specialist', 'Brand Manager', 'Social Media Lead', 'Digital Analyst', 'Copywriter', 'Public Relations'],
+    'Agriculture': ['Farm Manager', 'Agricultural Mechanic', 'Greenhouse Supervisor', 'Irrigation Specialist', 'Livestock Manager', 'Crop Consultant', 'Harvester', 'Tractor Operator'],
+    'Automotive': ['Service Manager', 'Master Technician', 'Body Shop Lead', 'Parts Coordinator', 'Fleet Mechanic', 'Diagnostic Specialist', 'Tire Technician', 'Diesel Mechanic'],
+    'PublicSafety': ['Fire Captain', 'Police Sergeant', 'EMS Supervisor', '911 Dispatcher', 'Security Manager', 'Emergency Coordinator', 'Parole Officer', 'Correctional Officer'],
+    'GeneralServices': ['Janitor', 'Security Guard', 'Customer Service', 'Retail Associate', 'Stock Clerk', 'Groundskeeper', 'Maintenance Worker', 'Custodian', 'Pest Control Tech', 'Housekeeper']
+  };
+
+  const industryIcons: Record<string, any> = {
+    'Construction': HardHat,
+    'Manufacturing': Factory,
+    'Logistics': Truck,
+    'Energy': Zap,
+    'Hospitality': Utensils,
+    'Technology': Monitor,
+    'Finance': DollarSign,
+    'Healthcare': Stethoscope,
+    'Defense': Shield,
+    'Marketing': Megaphone,
+    'Agriculture': Sprout,
+    'Automotive': Car,
+    'PublicSafety': Siren,
+    'GeneralServices': Wrench
+  };
+
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isTyping]);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const res = await fetch('/api/user/profile');
+        if (res.ok) {
+          const data = await res.json();
+          setSelectedPlan(data.user.plan_type);
+          setSessionsUsed(data.user.simulations_this_month);
+          setStep('setup');
+          fetchHistory();
         }
-        setStep('setup');
-      } else {
-        alert('Invalid email or password. Please check your credentials or sign up.');
+      } catch (e) {
+        console.error('Session check failed');
+      } finally {
+        setIsLoading(false);
       }
+    };
+    checkSession();
+  }, []);
+
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch('/api/simulations/history');
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data.history);
+      }
+    } catch (e) {
+      console.error('Failed to fetch history');
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('envision_current_user');
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const endpoint = authMode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
+    
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        setSelectedPlan(data.user.plan_type);
+        if (authMode === 'signup') {
+          setStep('pricing');
+        } else {
+          setStep('setup');
+          fetchHistory();
+        }
+      } else {
+        alert(data.error || 'Authentication failed');
+      }
+    } catch (e) {
+      alert('Network error. Please try again.');
+    }
+  };
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
     setEmail('');
     setPassword('');
     setStep('auth');
     setAuthMode('login');
+    setSelectedPlan(null);
+    setHistory([]);
   };
 
-  const selectPlan = (plan: 'beginner' | 'pro' | 'elite') => {
-    setSelectedPlan(plan);
-    // In a real app, these would be actual Stripe checkout URLs
-    const urls = {
-      beginner: 'https://buy.stripe.com/beginner_plan_link',
-      pro: 'https://buy.stripe.com/pro_plan_link',
-      elite: 'https://buy.stripe.com/elite_plan_link'
-    };
-    
-    // For the prototype, we'll just simulate the selection
-    // window.open(urls[plan], '_blank');
-    setStep('setup');
+  const selectPlan = async (plan: 'beginner' | 'pro') => {
+    try {
+      const res = await fetch('/api/user/upgrade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan_type: plan })
+      });
+      if (res.ok) {
+        setSelectedPlan(plan);
+        trackEvent('plan_unlocked', { plan });
+        setStep('setup');
+      }
+    } catch (e) {
+      alert('Failed to upgrade plan');
+    }
   };
 
   const endInterview = async () => {
@@ -229,7 +266,27 @@ Generated by EnvisionPaths Career Intelligence`;
       ${conversation}`;
 
       const response = await generateContent(prompt);
-      setSummary(response.text);
+      const summaryText = response.text;
+      setSummary(summaryText);
+
+      // Extract score (simple regex)
+      const scoreMatch = summaryText.match(/Score:?\s*(\d+)/i) || summaryText.match(/(\d+)\/10/);
+      const score = scoreMatch ? parseInt(scoreMatch[1]) : 7;
+
+      // Save to backend
+      await fetch('/api/simulations/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          job_title: jobTitle,
+          industry,
+          score,
+          feedback: summaryText
+        })
+      });
+      
+      trackEvent('simulation_completed', { job_title: jobTitle, score });
+      fetchHistory();
     } catch (error) {
       console.error("Error generating summary:", error);
       setSummary("We encountered an error generating your summary. Please try again or review your chat history.");
@@ -241,28 +298,29 @@ Generated by EnvisionPaths Career Intelligence`;
   const startInterview = async () => {
     if (!jobTitle) return;
     
-    const isFree = !selectedPlan || selectedPlan === 'free';
-    if (isFree && sessionsUsed >= 2) {
-      setStep('pricing');
-      return;
-    }
-    
-    setStep('interview');
-    setSessionsUsed(prev => prev + 1);
-    setIsTyping(true);
-    
-    const prompt = `You are a professional career coach and expert interviewer at EnvisionPaths. 
-    I am applying for the position of ${jobTitle} in the ${industry} industry. 
-    Please start the interview by introducing yourself briefly and asking the first interview question. 
-    Keep your tone professional, encouraging, and insightful.`;
-
     try {
-      const response = await generateContent(prompt);
-      const text = response.text;
+      const res = await fetch('/api/simulations/start', { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error);
+        if (res.status === 403) setStep('pricing');
+        return;
+      }
+
+      setStep('interview');
+      setSessionsUsed(prev => prev + 1);
+      setIsTyping(true);
+      trackEvent('simulation_started', { job_title: jobTitle });
       
+      const prompt = `You are a professional career coach and expert interviewer at EnvisionPaths. 
+      I am applying for the position of ${jobTitle} in the ${industry} industry. 
+      Please start the interview by introducing yourself briefly and asking the first interview question. 
+      Keep your tone professional, encouraging, and insightful.`;
+
+      const response = await generateContent(prompt);
       setMessages([{
         role: 'model',
-        text: text,
+        text: response.text,
         timestamp: new Date()
       }]);
     } catch (error) {
@@ -630,6 +688,7 @@ Generated by EnvisionPaths Career Intelligence`;
                   <button 
                     onClick={() => {
                       setSelectedPlan('free');
+                      trackEvent('upgrade_clicked', { plan: 'free' });
                       setStep('setup');
                     }}
                     disabled={sessionsUsed >= 2}
@@ -673,14 +732,13 @@ Generated by EnvisionPaths Career Intelligence`;
                       <CheckCircle2 size={14} className="text-blue-500" />
                       Performance tracking
                     </li>
-                    <li className="flex items-center gap-3 text-zinc-300 text-xs">
-                      <CheckCircle2 size={14} className="text-blue-500" />
-                      Full resource library
-                    </li>
                   </ul>
 
                   <button 
-                    onClick={() => selectPlan('beginner')}
+                    onClick={() => {
+                      trackEvent('upgrade_clicked', { plan: 'beginner' });
+                      selectPlan('beginner');
+                    }}
                     className={`w-full py-3 text-xs font-black uppercase tracking-widest rounded-xl border transition-all ${
                       selectedPlan === 'beginner' 
                         ? 'bg-blue-600 text-white border-blue-500' 
@@ -719,20 +777,15 @@ Generated by EnvisionPaths Career Intelligence`;
                     </li>
                     <li className="flex items-center gap-3 text-zinc-200 text-xs">
                       <CheckCircle2 size={14} className="text-red-600" />
-                      Analytics dashboard
-                    </li>
-                    <li className="flex items-center gap-3 text-zinc-200 text-xs">
-                      <CheckCircle2 size={14} className="text-red-600" />
-                      Resume alignment
-                    </li>
-                    <li className="flex items-center gap-3 text-zinc-200 text-xs">
-                      <CheckCircle2 size={14} className="text-red-600" />
                       Saved history
                     </li>
                   </ul>
 
                   <button 
-                    onClick={() => selectPlan('pro')}
+                    onClick={() => {
+                      trackEvent('upgrade_clicked', { plan: 'pro' });
+                      selectPlan('pro');
+                    }}
                     className={`w-full py-3 text-xs font-black uppercase tracking-widest rounded-xl border transition-all ${
                       selectedPlan === 'pro' 
                         ? 'bg-red-600 text-white border-red-500' 
@@ -744,11 +797,11 @@ Generated by EnvisionPaths Career Intelligence`;
                 </div>
 
                 {/* Elite Tier */}
-                <div className="bg-zinc-900/20 border border-white/5 p-8 rounded-3xl backdrop-blur-sm flex flex-col opacity-60 grayscale group">
+                <div className="bg-zinc-900/20 border border-white/5 p-8 rounded-3xl backdrop-blur-sm flex flex-col opacity-40 grayscale group">
                   <div className="mb-8">
                     <h3 className="text-xl font-black uppercase italic mb-2 text-zinc-500">Elite</h3>
                     <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-black">TBA</span>
+                      <span className="text-3xl font-black">Coming Soon</span>
                     </div>
                     <p className="text-[10px] text-zinc-600 uppercase font-bold mt-1">Future Tier</p>
                   </div>
@@ -761,14 +814,6 @@ Generated by EnvisionPaths Career Intelligence`;
                     <li className="flex items-center gap-3 text-zinc-600 text-xs">
                       <Lock size={14} />
                       Custom role simulation
-                    </li>
-                    <li className="flex items-center gap-3 text-zinc-600 text-xs">
-                      <Lock size={14} />
-                      AI Interview Blueprint
-                    </li>
-                    <li className="flex items-center gap-3 text-zinc-600 text-xs">
-                      <Lock size={14} />
-                      Direct feedback calls
                     </li>
                   </ul>
 
@@ -794,115 +839,167 @@ Generated by EnvisionPaths Career Intelligence`;
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="max-w-2xl mx-auto mt-12"
+              className="max-w-5xl mx-auto mt-12"
             >
-              <div className="bg-zinc-900/30 border border-white/10 rounded-3xl p-10 backdrop-blur-sm">
-                <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-3">Prepare for Success</h2>
-                <div className="flex items-center justify-between mb-10">
-                  <p className="text-zinc-400 leading-relaxed">The interview is your opportunity to shine. Define your goal and let's begin the practice session.</p>
-                  {(!selectedPlan || selectedPlan === 'free') && (
-                    <div className="bg-zinc-800/50 border border-white/5 px-4 py-2 rounded-xl">
-                      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
-                        {sessionsUsed} of 2 free simulations used
-                      </p>
-                    </div>
-                  )}
+              <div className="text-center mb-12">
+                <h2 className="text-5xl font-black tracking-tighter uppercase italic mb-4">Prepare for Success</h2>
+                <p className="text-zinc-400 max-w-2xl mx-auto">The interview is your opportunity to shine. Select your industry and target role to begin your practice session.</p>
+                {(!selectedPlan || selectedPlan === 'free') && (
+                  <div className="mt-6 inline-block bg-zinc-800/50 border border-white/5 px-4 py-2 rounded-full">
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                      {sessionsUsed} of 2 free simulations used
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid lg:grid-cols-3 gap-8">
+                {/* Industry Selection Column */}
+                <div className="lg:col-span-1 space-y-4">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-red-500 ml-1">1. Select Industry</label>
+                  <div className="grid grid-cols-1 gap-2 max-h-[600px] overflow-y-auto pr-2 scrollbar-hide">
+                    {Object.keys(suggestedRoles).map((ind) => {
+                      const Icon = industryIcons[ind] || Briefcase;
+                      return (
+                        <button
+                          key={ind}
+                          onClick={() => {
+                            setIndustry(ind);
+                            setJobTitle('');
+                          }}
+                          className={`flex items-center gap-4 p-4 rounded-2xl border transition-all text-left group ${
+                            industry === ind 
+                              ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-900/20' 
+                              : 'bg-zinc-900/50 border-white/5 text-zinc-400 hover:border-white/20 hover:bg-zinc-900'
+                          }`}
+                        >
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
+                            industry === ind ? 'bg-white/20' : 'bg-zinc-800 group-hover:bg-zinc-700'
+                          }`}>
+                            <Icon size={20} className={industry === ind ? 'text-white' : 'text-zinc-300'} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-black uppercase tracking-widest">
+                              {ind.replace(/([A-Z])/g, ' $1').trim()}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                
-                <div className="space-y-8">
-                  <div className="space-y-3">
-                    <label htmlFor="jobTitle" className="text-[10px] font-bold uppercase tracking-widest text-red-500 ml-1">Target Position</label>
-                    <Tooltip content="The specific role you are practicing for" position="right">
-                      <div className="relative">
-                        <Briefcase className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
-                        <input 
-                          id="jobTitle"
-                          name="jobTitle"
-                          type="text" 
-                          placeholder="e.g. Site Supervisor or Electrician"
-                          value={jobTitle}
-                          onChange={(e) => setJobTitle(e.target.value)}
-                          className="w-full pl-12 pr-4 py-5 bg-black border border-white/10 rounded-2xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-lg font-medium"
-                        />
+
+                {/* Role Selection Column */}
+                <div className="lg:col-span-2 space-y-6">
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-red-500 ml-1">2. Choose or Type Role</label>
+                    
+                    <div className="relative">
+                      <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
+                      <input 
+                        id="jobTitle"
+                        name="jobTitle"
+                        type="text" 
+                        placeholder="Search or enter any job title..."
+                        value={jobTitle}
+                        onChange={(e) => setJobTitle(e.target.value)}
+                        className="w-full pl-16 pr-6 py-6 bg-zinc-900 border border-white/10 rounded-3xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-xl font-bold placeholder:text-zinc-600"
+                      />
+                    </div>
+
+                    {industry ? (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-zinc-900/30 border border-white/5 rounded-3xl p-8"
+                      >
+                        <div className="flex items-center justify-between mb-6">
+                          <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500">Suggested {industry} Roles</h3>
+                          <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">{suggestedRoles[industry].length} Roles Available</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          {suggestedRoles[industry].map((role) => (
+                            <button
+                              key={role}
+                              onClick={() => setJobTitle(role)}
+                              className={`p-4 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border text-left flex items-center justify-between group ${
+                                jobTitle === role 
+                                  ? 'bg-red-600 border-red-500 text-white' 
+                                  : 'bg-zinc-900 border-white/5 text-zinc-400 hover:border-red-500/50 hover:text-zinc-200'
+                              }`}
+                            >
+                              {role}
+                              <ChevronRight size={14} className={`transition-transform ${jobTitle === role ? 'translate-x-0' : '-translate-x-2 opacity-0 group-hover:translate-x-0 group-hover:opacity-100'}`} />
+                            </button>
+                          ))}
+                        </div>
+                      </motion.div>
+                    ) : (
+                      <div className="h-[400px] border-2 border-dashed border-white/5 rounded-3xl flex flex-col items-center justify-center text-zinc-600 p-12 text-center">
+                        <Target size={48} className="mb-4 opacity-20" />
+                        <p className="text-sm font-bold uppercase tracking-widest">Select an industry to see suggested roles</p>
                       </div>
-                    </Tooltip>
+                    )}
                   </div>
 
-                  {industry && suggestedRoles[industry] && (
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 ml-1">Suggested Roles</label>
-                      <div className="flex flex-wrap gap-2">
-                        {suggestedRoles[industry].map((role) => (
-                          <button
-                            key={role}
-                            onClick={() => setJobTitle(role)}
-                            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all border ${
-                              jobTitle === role 
-                                ? 'bg-red-600 border-red-500 text-white' 
-                                : 'bg-zinc-900 border-white/10 text-zinc-400 hover:border-red-500/50 hover:text-zinc-200'
-                            }`}
-                          >
-                            {role}
-                          </button>
+                  {/* Simulation History */}
+                  {history.length > 0 && (
+                    <div className="bg-zinc-900/20 border border-white/5 rounded-3xl p-8">
+                      <div className="flex items-center gap-2 mb-6">
+                        <History size={16} className="text-red-500" />
+                        <h3 className="text-xs font-black uppercase tracking-widest text-zinc-400">Previous Attempts</h3>
+                      </div>
+                      <div className="space-y-3">
+                        {history.slice(0, 3).map((sim) => (
+                          <div key={sim.id} className="flex items-center justify-between p-4 bg-black/40 border border-white/5 rounded-xl">
+                            <div>
+                              <p className="text-xs font-bold text-white uppercase tracking-wider">{sim.job_title}</p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest">{sim.industry}</span>
+                                <span className="text-[9px] text-zinc-600">•</span>
+                                <span className="text-[9px] text-zinc-500 uppercase font-black tracking-widest">{new Date(sim.created_at).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-lg font-black italic text-red-500">{sim.score}/10</p>
+                            </div>
+                          </div>
                         ))}
                       </div>
                     </div>
                   )}
 
-                  <div className="space-y-3">
-                    <label htmlFor="industry" className="text-[10px] font-bold uppercase tracking-widest text-red-500 ml-1">Industry Sector</label>
-                    <Tooltip content="Tailors the AI's industry knowledge" position="right">
-                      <select 
-                        id="industry"
-                        name="industry"
-                        value={industry}
-                        onChange={(e) => setIndustry(e.target.value)}
-                        className="w-full px-6 py-5 bg-black border border-white/10 rounded-2xl focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition-all text-lg appearance-none"
+                  <div className="pt-4">
+                    <Tooltip content="Launch the AI career coach simulation">
+                      <button 
+                        onClick={startInterview}
+                        disabled={!jobTitle}
+                        className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.3em] py-8 rounded-3xl shadow-2xl shadow-red-900/40 transition-all flex items-center justify-center gap-4 border border-white/20 group text-xl"
                       >
-                        <option value="">Select Sector</option>
-                        <option value="Technology">Technology</option>
-                        <option value="Finance">Finance</option>
-                        <option value="Healthcare">Healthcare</option>
-                        <option value="Construction">Construction & Trades</option>
-                        <option value="Manufacturing">Manufacturing</option>
-                        <option value="Logistics">Logistics & Transportation</option>
-                        <option value="Energy">Energy & Utilities</option>
-                        <option value="Hospitality">Hospitality & Service</option>
-                        <option value="Agriculture">Agriculture & Farming</option>
-                        <option value="Automotive">Automotive & Repair</option>
-                        <option value="PublicSafety">Public Safety & Emergency</option>
-                        <option value="GeneralServices">General Services & Maintenance</option>
-                        <option value="Defense">Defense & Aerospace</option>
-                        <option value="Marketing">Marketing</option>
-                      </select>
+                        Start Practice Session
+                        <ChevronRight size={28} className="group-hover:translate-x-2 transition-transform" />
+                      </button>
                     </Tooltip>
                   </div>
-
-                  <Tooltip content="Launch the AI career coach simulation">
-                    <button 
-                      onClick={startInterview}
-                      disabled={!jobTitle}
-                      className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.3em] py-6 rounded-2xl shadow-xl shadow-red-900/20 transition-all flex items-center justify-center gap-3 border border-white/20 group"
-                    >
-                      Start Practice Session
-                      <ChevronRight size={24} className="group-hover:translate-x-1 transition-transform" />
-                    </button>
-                  </Tooltip>
                 </div>
+              </div>
 
-                <div className="mt-16 grid grid-cols-3 gap-6">
-                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-500 transition-colors">
-                    <Award className="mx-auto text-red-500 mb-3" size={28} />
-                    <p className="text-[9px] font-black uppercase text-zinc-300 tracking-widest group-hover:text-white transition-colors">Expert Tips</p>
-                  </div>
-                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-500 transition-colors">
-                    <CheckCircle2 className="mx-auto text-red-500 mb-3" size={28} />
-                    <p className="text-[9px] font-black uppercase text-zinc-300 tracking-widest group-hover:text-white transition-colors">Expert Analysis</p>
-                  </div>
-                  <div className="p-6 bg-zinc-900/50 border border-white/5 rounded-2xl text-center group hover:border-red-500 transition-colors">
-                    <MessageSquare className="mx-auto text-red-500 mb-3" size={28} />
-                    <p className="text-[9px] font-black uppercase text-zinc-300 tracking-widest group-hover:text-white transition-colors">Real-Time</p>
-                  </div>
+              <div className="mt-16 grid grid-cols-4 gap-6">
+                <div className="p-8 bg-zinc-900/50 border border-white/5 rounded-3xl text-center group hover:border-red-500 transition-colors">
+                  <Award className="mx-auto text-red-500 mb-4" size={32} />
+                  <p className="text-[10px] font-black uppercase text-zinc-300 tracking-widest group-hover:text-white transition-colors">Expert Tips</p>
+                </div>
+                <div className="p-8 bg-zinc-900/50 border border-white/5 rounded-3xl text-center group hover:border-red-500 transition-colors">
+                  <CheckCircle2 className="mx-auto text-red-500 mb-4" size={32} />
+                  <p className="text-[10px] font-black uppercase text-zinc-300 tracking-widest group-hover:text-white transition-colors">Skill Validation</p>
+                </div>
+                <div className="p-8 bg-zinc-900/50 border border-white/5 rounded-3xl text-center group hover:border-red-500 transition-colors">
+                  <Target className="mx-auto text-red-500 mb-4" size={32} />
+                  <p className="text-[10px] font-black uppercase text-zinc-300 tracking-widest group-hover:text-white transition-colors">Goal Focused</p>
+                </div>
+                <div className="p-8 bg-zinc-900/50 border border-white/5 rounded-3xl text-center group hover:border-red-500 transition-colors">
+                  <RefreshCw className="mx-auto text-red-500 mb-4" size={32} />
+                  <p className="text-[10px] font-black uppercase text-zinc-300 tracking-widest group-hover:text-white transition-colors">Infinite Retries</p>
                 </div>
               </div>
             </motion.div>
