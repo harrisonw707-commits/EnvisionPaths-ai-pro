@@ -9,6 +9,35 @@ import Stripe from 'stripe';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// In-memory log buffer for debugging
+const logBuffer: string[] = [];
+const originalLog = console.log;
+const originalError = console.error;
+
+process.on('uncaughtException', (err) => {
+  originalError('[CRITICAL UNCAUGHT EXCEPTION]', err);
+  logBuffer.push(`[${new Date().toISOString()}] CRITICAL ERROR: ${err.message}`);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  originalError('[UNHANDLED REJECTION]', reason);
+  logBuffer.push(`[${new Date().toISOString()}] UNHANDLED REJECTION: ${reason}`);
+});
+
+console.log = (...args: any[]) => {
+  const msg = `[${new Date().toISOString()}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}`;
+  logBuffer.push(msg);
+  if (logBuffer.length > 100) logBuffer.shift();
+  originalLog.apply(console, args);
+};
+
+console.error = (...args: any[]) => {
+  const msg = `[${new Date().toISOString()}] ERROR: ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}`;
+  logBuffer.push(msg);
+  if (logBuffer.length > 100) logBuffer.shift();
+  originalError.apply(console, args);
+};
+
 // Lazy Stripe initialization
 let stripe: Stripe | null = null;
 function getStripe() {
@@ -24,12 +53,15 @@ function getStripe() {
 }
 
 // Database Initialization
-const db = new Database('envision.db');
+const db = new Database('envision.db', { timeout: 5000 });
 db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
 
 // Create tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
+console.log('[DB] Initializing tables...');
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE,
     password TEXT,
@@ -67,6 +99,10 @@ db.exec(`
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
 `);
+  console.log('[DB] Tables initialized successfully');
+} catch (e: any) {
+  console.error('[DB] Error initializing tables:', e);
+}
 
 // Database Migrations: Ensure columns exist for existing databases
 console.log('[SERVER] Running migrations...');
@@ -79,7 +115,9 @@ const migrations = [
   "ALTER TABLE users ADD COLUMN plan_start_date DATETIME DEFAULT CURRENT_TIMESTAMP",
   "ALTER TABLE simulations ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
   "ALTER TABLE simulations ADD COLUMN status TEXT DEFAULT 'completed'",
-  "CREATE INDEX IF NOT EXISTS idx_simulations_user_id ON simulations(user_id)"
+  "CREATE INDEX IF NOT EXISTS idx_simulations_user_id ON simulations(user_id)",
+  "ALTER TABLE users ADD COLUMN email_verification_code TEXT",
+  "ALTER TABLE users ADD COLUMN email_verification_expiry DATETIME"
 ];
 
 for (const migration of migrations) {
@@ -112,65 +150,174 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
-  app.use(cookieParser());
-
-  // Health check
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
-  });
-
-  // Auth Middleware
+  // 1. Helper Functions (Defined at top of scope)
   const getSessionUser = (req: express.Request) => {
     const sessionId = req.cookies.session_id || req.headers['x-session-id'];
+    
     if (!sessionId) {
-      console.log('[AUTH] No session_id found in cookies or headers');
       return null;
     }
-    const session = db.prepare('SELECT user_id FROM sessions WHERE id = ? AND expires_at > CURRENT_TIMESTAMP').get(sessionId) as { user_id: number } | undefined;
-    if (!session) {
-      console.log(`[AUTH] Session not found or expired: ${sessionId}`);
+
+    // Handle case where header might be an array
+    const sid = Array.isArray(sessionId) ? sessionId[0] : sessionId;
+    
+    try {
+      console.log(`[AUTH] Verifying session: ${sid}`);
+      
+      // First check if session exists at all
+      const sessionExists = db.prepare('SELECT user_id, expires_at FROM sessions WHERE id = ?').get(sid) as { user_id: number, expires_at: string } | undefined;
+      
+      if (!sessionExists) {
+        console.log(`[AUTH] Session ID not found in database: ${sid}`);
+        return null;
+      }
+
+      // Then check expiration using SQL for consistency
+      const session = db.prepare(`
+        SELECT user_id 
+        FROM sessions 
+        WHERE id = ? AND expires_at > datetime('now')
+      `).get(sid) as { user_id: number } | undefined;
+      
+      if (!session) {
+        console.log(`[AUTH] Session expired in DB: ${sid} (Expires at: ${sessionExists.expires_at}, Current DB time: ${db.prepare("SELECT datetime('now')").get()})`);
+        return null;
+      }
+
+      const user = db.prepare(`
+        SELECT id, email, plan_type, plan_start_date, is_admin, two_factor_enabled 
+        FROM users 
+        WHERE id = ?
+      `).get(session.user_id) as any;
+
+      if (!user) {
+        console.log(`[AUTH] User not found for session: ${session.user_id}`);
+        return null;
+      }
+
+      return user;
+    } catch (e: any) {
+      console.error(`[AUTH] DB Error in getSessionUser: ${e.message}`);
       return null;
     }
-    const user = db.prepare('SELECT id, email, plan_type, plan_start_date, is_admin, two_factor_enabled FROM users WHERE id = ?').get(session.user_id) as { id: number, email: string, plan_type: string, plan_start_date: string, is_admin: number, two_factor_enabled: number };
-    if (user) {
-      console.log(`[AUTH] User authenticated: ${user.email} (Admin: ${!!user.is_admin})`);
-    }
-    return user;
   };
 
-  // API Routes
+  // 2. Logging Middleware
   app.use((req, res, next) => {
-    if (req.path.startsWith('/api')) {
-      console.log(`[API] ${req.method} ${req.path}`);
-    }
+    const start = Date.now();
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      if (req.path.startsWith('/api')) {
+        console.log(`[API] ${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
+      }
+    });
     next();
   });
 
-  app.post('/api/auth/admin-bypass', (req, res) => {
-    const { email } = req.body;
-    if (email !== 'harrisonw707@gmail.com') {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+  app.use(express.json());
+  app.use(cookieParser());
 
+  console.log('[SERVER] Registering API routes...');
+
+  // 3. Danger Zone / Debug Routes
+  app.post('/api/debug/reset-server', (req, res) => {
+    console.log('[DEBUG] Server reset requested');
     try {
-      // Ensure user exists as admin
-      let user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: number };
-      if (!user) {
-        const result = db.prepare('INSERT INTO users (email, is_admin) VALUES (?, 1)').run(email);
-        user = { id: Number(result.lastInsertRowid) };
-      } else {
-        db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
-      }
-
-      const sessionId = Math.random().toString(36).substring(2);
-      db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
-      res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
-      res.json({ success: true, sessionId });
+      db.prepare('DELETE FROM sessions').run();
+      db.prepare('DELETE FROM simulations').run();
+      console.log('[DEBUG] Server state cleared');
+      res.json({ success: true, message: 'Server state cleared' });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
+
+  // Debug logs endpoint
+  app.get('/api/debug/logs', (req, res) => {
+    res.json({ logs: logBuffer });
+  });
+
+  // 1. Admin Login (Priority)
+  app.post('/api/admin-login', (req, res) => {
+    console.log(`[API] Entering /api/admin-login with body:`, req.body);
+    try {
+      const { email } = req.body;
+      if (email === 'harrisonw707@gmail.com') {
+        console.log('[API] Admin bypass triggered for harrisonw707@gmail.com');
+        
+        // Find or create user
+        let user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as any;
+        if (!user) {
+          console.log('[API] Creating new admin user');
+          const result = db.prepare('INSERT INTO users (email, is_admin) VALUES (?, 1)').run(email);
+          user = { id: Number(result.lastInsertRowid) };
+        } else {
+          db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
+        }
+
+        const sessionId = 'admin_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
+        console.log(`[API] Creating session: ${sessionId}`);
+        db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
+        
+        res.cookie('session_id', sessionId, { 
+          httpOnly: true, 
+          secure: true, 
+          sameSite: 'none', 
+          maxAge: 7 * 24 * 60 * 60 * 1000 
+        });
+        
+        console.log('[API] Admin login success');
+        return res.json({ success: true, sessionId });
+      }
+      console.log('[API] Admin login failed: Email mismatch');
+      res.status(401).json({ success: false, error: 'Admin login failed.' });
+    } catch (e: any) {
+      console.error('[API] Admin login error:', e);
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // 2. Profile (Priority)
+  app.get('/api/user/profile', (req, res) => {
+    console.log('[API] Entering /api/user/profile');
+    try {
+      const user = getSessionUser(req);
+      if (user) {
+        console.log(`[API] Profile found for: ${user.email}`);
+        const simulationsCount = db.prepare("SELECT COUNT(*) as count FROM simulations WHERE user_id = ? AND created_at > date('now', 'start of month')").get(user.id) as { count: number };
+        return res.json({ user: { ...user, simulations_this_month: simulationsCount.count } });
+      }
+      console.log('[API] No user session for profile');
+      res.status(401).json({ error: 'Not authenticated' });
+    } catch (e: any) {
+      console.error('[API] Profile error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Health check
+  app.get('/api/health', (req, res) => {
+    try {
+      const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
+      res.json({ 
+        status: 'ok', 
+        timestamp: new Date().toISOString(), 
+        db: 'connected',
+        stats: { users: userCount.count }
+      });
+    } catch (e: any) {
+      res.status(500).json({ status: 'error', error: e.message });
+    }
+  });
+
+  app.get('/api/debug/logs', (req, res) => {
+    res.json({ logs: logBuffer });
+  });
+
+  // Auth Middleware
+  // (getSessionUser is defined at the top of startServer scope)
+
+  // API Routes
 
   app.post('/api/auth/signup', async (req, res) => {
     const { email, password } = req.body;
@@ -223,6 +370,44 @@ async function startServer() {
       }
     }
     res.status(401).json({ error: 'Invalid credentials' });
+  });
+
+  app.post('/api/auth/send-email-code', (req, res) => {
+    const { user_id } = req.body;
+    const user = db.prepare('SELECT id, email FROM users WHERE id = ?').get(user_id) as { id: number, email: string } | undefined;
+    
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
+
+    db.prepare('UPDATE users SET email_verification_code = ?, email_verification_expiry = ? WHERE id = ?').run(code, expiry, user.id);
+
+    // In a real app, you would send an email here.
+    // For this environment, we log it to the console.
+    console.log(`[AUTH] EMAIL VERIFICATION CODE FOR ${user.email}: ${code}`);
+    
+    res.json({ success: true, message: 'Verification code sent to your email.' });
+  });
+
+  app.post('/api/auth/verify-email-code', (req, res) => {
+    const { user_id, code } = req.body;
+    const user = db.prepare('SELECT id, email, plan_type, email_verification_code, email_verification_expiry FROM users WHERE id = ?').get(user_id) as { id: number, email: string, plan_type: string, email_verification_code: string, email_verification_expiry: string } | undefined;
+    
+    if (!user) return res.status(401).json({ error: 'Invalid request' });
+
+    const now = new Date().toISOString();
+    if (user.email_verification_code === code && user.email_verification_expiry > now) {
+      // Clear the code after use
+      db.prepare('UPDATE users SET email_verification_code = NULL, email_verification_expiry = NULL WHERE id = ?').run(user.id);
+
+      const sessionId = Math.random().toString(36).substring(2);
+      db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
+      res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
+      res.json({ success: true, user: { email: user.email, plan_type: user.plan_type }, sessionId });
+    } else {
+      res.status(401).json({ error: 'Invalid or expired verification code' });
+    }
   });
 
   app.post('/api/auth/login-2fa', (req, res) => {
@@ -299,23 +484,10 @@ async function startServer() {
   });
 
   app.post('/api/auth/logout', (req, res) => {
-    const sessionId = req.cookies.session_id;
+    const sessionId = req.cookies.session_id || req.headers['x-session-id'];
     if (sessionId) db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
     res.clearCookie('session_id');
     res.json({ success: true });
-  });
-
-  app.get('/api/user/profile', (req, res) => {
-    console.log('[PROFILE] Fetching profile...');
-    const user = getSessionUser(req);
-    if (user) {
-      console.log(`[PROFILE] Found user: ${user.email}`);
-      const simulationsCount = db.prepare("SELECT COUNT(*) as count FROM simulations WHERE user_id = ? AND created_at > date('now', 'start of month')").get(user.id) as { count: number };
-      res.json({ user: { ...user, simulations_this_month: simulationsCount.count } });
-    } else {
-      console.log('[PROFILE] No user found in session');
-      res.status(401).json({ error: 'Not authenticated' });
-    }
   });
 
   app.get('/api/simulations/history', (req, res) => {
