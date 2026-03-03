@@ -259,6 +259,8 @@ async function startServer() {
         console.log(`[API] Creating session: ${sessionId}`);
         db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
         
+        const fullUser = db.prepare('SELECT id, email, plan_type, is_admin, two_factor_enabled FROM users WHERE id = ?').get(user.id) as any;
+        
         res.cookie('session_id', sessionId, { 
           httpOnly: true, 
           secure: true, 
@@ -267,7 +269,7 @@ async function startServer() {
         });
         
         console.log('[API] Admin login success');
-        return res.json({ success: true, sessionId });
+        return res.json({ success: true, sessionId, user: fullUser });
       }
       console.log('[API] Admin login failed: Email mismatch');
       res.status(401).json({ success: false, error: 'Admin login failed.' });
@@ -321,6 +323,9 @@ async function startServer() {
 
   app.post('/api/auth/signup', async (req, res) => {
     const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
       let userId: number | bigint;
@@ -347,29 +352,39 @@ async function startServer() {
       res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
       res.json({ success: true, user: { email, plan_type: 'free' } });
     } catch (e: any) {
-      res.status(400).json({ error: 'Signup failed' });
+      console.error('[SIGNUP ERROR]', e);
+      res.status(400).json({ error: 'Signup failed: ' + e.message });
     }
   });
 
   app.post('/api/auth/login', async (req, res) => {
-    const { email, password } = req.body;
-    const user = db.prepare('SELECT id, email, password, plan_type, two_factor_enabled FROM users WHERE email = ?').get(email) as { id: number, email: string, password: string, plan_type: string, two_factor_enabled: number } | undefined;
-    
-    if (user) {
-      console.log(`[LOGIN] User found: ${email}, comparing password...`);
-      const isMatch = await bcrypt.compare(password, user.password);
-      console.log(`[LOGIN] Password match: ${isMatch}`);
-      if (isMatch) {
-        if (user.two_factor_enabled) {
-          return res.json({ success: true, requires_2fa: true, user_id: user.id });
-        }
-        const sessionId = Math.random().toString(36).substring(2);
-        db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
-        res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
-        return res.json({ success: true, user: { email: user.email, plan_type: user.plan_type }, sessionId });
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required' });
       }
+
+      const user = db.prepare('SELECT id, email, password, plan_type, two_factor_enabled FROM users WHERE email = ?').get(email) as { id: number, email: string, password: string, plan_type: string, two_factor_enabled: number } | undefined;
+      
+      if (user && user.password) {
+        console.log(`[LOGIN] User found: ${email}, comparing password...`);
+        const isMatch = await bcrypt.compare(password, user.password);
+        console.log(`[LOGIN] Password match: ${isMatch}`);
+        if (isMatch) {
+          if (user.two_factor_enabled) {
+            return res.json({ success: true, requires_2fa: true, user_id: user.id });
+          }
+          const sessionId = Math.random().toString(36).substring(2);
+          db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
+          res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
+          return res.json({ success: true, user: { email: user.email, plan_type: user.plan_type }, sessionId });
+        }
+      }
+      res.status(401).json({ error: 'Invalid credentials' });
+    } catch (e: any) {
+      console.error('[LOGIN ERROR]', e);
+      res.status(500).json({ error: 'Login failed: ' + e.message });
     }
-    res.status(401).json({ error: 'Invalid credentials' });
   });
 
   app.post('/api/auth/send-email-code', (req, res) => {
@@ -452,14 +467,19 @@ async function startServer() {
   });
 
   app.post('/api/admin/setup-2fa', async (req, res) => {
-    const user = getSessionUser(req);
-    if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+    try {
+      const user = getSessionUser(req);
+      if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
 
-    const secret = speakeasy.generateSecret({ name: `EnvisionAdmin:${user.email}` });
-    const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url || '');
+      const secret = speakeasy.generateSecret({ name: `EnvisionAdmin:${user.email}` });
+      const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url || '');
 
-    db.prepare('UPDATE users SET two_factor_secret = ? WHERE id = ?').run(secret.base32, user.id);
-    res.json({ secret: secret.base32, qrCodeUrl });
+      db.prepare('UPDATE users SET two_factor_secret = ? WHERE id = ?').run(secret.base32, user.id);
+      res.json({ secret: secret.base32, qrCodeUrl });
+    } catch (e: any) {
+      console.error('[2FA SETUP ERROR]', e);
+      res.status(500).json({ error: e.message });
+    }
   });
 
   app.post('/api/admin/verify-2fa', (req, res) => {
