@@ -1,5 +1,5 @@
 {
   "name": "EnvisionPaths",
-  "description": "Real interview practice powered by AI. Get personalized coaching from an intelligent interview coach.",
+  "description": "Master your next interview with an AI-powered coach. Practice real-world scenarios, get instant personalized feedback, and build the confidence you need to land your dream job.",
   "requestFramePermissions": ["microphone"]
 }
