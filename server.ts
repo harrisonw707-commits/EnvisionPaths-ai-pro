@@ -185,6 +185,25 @@ try {
   console.error("[SERVER] Error creating Google test user:", e);
 }
 
+// Create Vertex AI User
+console.log('[SERVER] Ensuring Vertex AI test user...');
+try {
+  const vertexEmail = 'vertex-ai-user@envisionpaths.com';
+  const vertexPassword = 'VertexPassword123!';
+  const hashedPassword = await bcrypt.hash(vertexPassword, 10);
+  
+  const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(vertexEmail);
+  if (!existingUser) {
+    db.prepare('INSERT INTO users (email, password, plan_type, is_admin) VALUES (?, ?, ?, ?)').run(vertexEmail, hashedPassword, 'elite', 0);
+    console.log('[SERVER] Vertex AI test user created successfully');
+  } else {
+    db.prepare('UPDATE users SET password = ?, plan_type = ?, two_factor_enabled = 0 WHERE email = ?').run(hashedPassword, 'elite', vertexEmail);
+    console.log('[SERVER] Vertex AI test user updated successfully');
+  }
+} catch (e) {
+  console.error("[SERVER] Error creating Vertex AI test user:", e);
+}
+
 console.log('[SERVER] Starting initialization...');
 
 async function startServer() {
