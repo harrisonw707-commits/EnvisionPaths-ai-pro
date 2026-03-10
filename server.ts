@@ -163,7 +163,8 @@ console.log('[SERVER] Starting initialization...');
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 8080; // Cloud Run provides PORT (usually 8080)
+  console.log(`[SERVER] Using PORT=${PORT} (process.env.PORT=${process.env.PORT})`);
 
   // Ensure harrisonw707@gmail.com is an admin
   console.log('[SERVER] Ensuring admin user...');
