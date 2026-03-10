@@ -1,7 +1,10 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
 // Initialize with the platform-provided key
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+if (!process.env.GEMINI_API_KEY) {
+  console.warn("GEMINI_API_KEY is not set. AI features will not work.");
+}
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'dummy-key' });
 
 export interface AIResponse {
   text: string;

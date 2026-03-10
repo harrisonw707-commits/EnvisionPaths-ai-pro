@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import Database from 'better-sqlite3';
 import cookieParser from 'cookie-parser';
+import cors from 'cors';
 import Stripe from 'stripe';
 import bcrypt from 'bcrypt';
 import speakeasy from 'speakeasy';
@@ -190,6 +191,8 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  app.set('trust proxy', 1);
+
   // 1. Helper Functions (Defined at top of scope)
   const getSessionUser = (req: express.Request) => {
     const sessionId = req.cookies.session_id || req.headers['x-session-id'];
@@ -249,12 +252,25 @@ async function startServer() {
       const duration = Date.now() - start;
       if (req.path.startsWith('/api')) {
         console.log(`[API] ${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
+        if (res.statusCode === 403) {
+          console.warn(`[403 WARNING] Request to ${req.path} returned 403. Headers: ${JSON.stringify(req.headers)}`);
+        }
       }
     });
     next();
   });
 
-  app.use(express.json({ limit: '1mb' }));
+  app.use(cors({
+    origin: (origin, callback) => {
+      // Allow all origins in this environment
+      callback(null, true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-session-id']
+  }));
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
 
   /**
@@ -357,10 +373,6 @@ async function startServer() {
     } catch (e: any) {
       res.status(500).json({ status: 'error', error: e.message });
     }
-  });
-
-  app.get('/api/debug/logs', (req, res) => {
-    res.json({ logs: logBuffer });
   });
 
   // Auth Middleware
@@ -573,24 +585,6 @@ async function startServer() {
     } else {
       res.status(401).json({ error: 'Invalid or expired reset code' });
     }
-  });
-
-  app.post('/api/auth/send-email-code', (req, res) => {
-    const { user_id } = req.body;
-    const user = db.prepare('SELECT id, email FROM users WHERE id = ?').get(user_id) as { id: number, email: string } | undefined;
-    
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
-
-    db.prepare('UPDATE users SET email_verification_code = ?, email_verification_expiry = ? WHERE id = ?').run(code, expiry, user.id);
-
-    // In a real app, you would send an email here.
-    // For this environment, we log it to the console.
-    console.log(`[AUTH] EMAIL VERIFICATION CODE FOR ${user.email}: ${code}`);
-    
-    res.json({ success: true, message: 'Verification code sent to your email.' });
   });
 
   app.post('/api/auth/verify-email-code', (req, res) => {
