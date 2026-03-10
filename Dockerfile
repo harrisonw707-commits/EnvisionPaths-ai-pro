@@ -1,26 +1,20 @@
-# Use Node.js 18 Alpine image
-FROM node:18-alpine
-
-# Set working directory
+FROM node:18-alpine AS build
+# Install build tools for native modules (better-sqlite3, bcrypt, etc.)
+RUN apk add --no-cache python3 make g++
 WORKDIR /app
-
-# Copy package.json and package-lock.json
 COPY package*.json ./
-
-# Install dependencies
-RUN npm install
-
-# Copy the rest of the application files
+RUN npm ci
 COPY . .
-
-# Build the React app
 RUN npm run build
 
-# Set environment variable for production
+FROM node:18-alpine AS run
+WORKDIR /app
 ENV NODE_ENV=production
-
-# Expose port 8080 for the app
+ENV PORT=8080
+RUN apk add --no-cache libc6-compat
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY server.ts ./server.ts
+COPY --from=build /app/dist ./dist
 EXPOSE 8080
-
-# Start the React app
-CMD [ "npm", "start" ]
+CMD ["node", "--import", "tsx", "server.ts"]
