@@ -164,6 +164,26 @@ try {
   console.warn("[SERVER] Could not promote admin user:", e);
 }
 
+// Create Google Test User for Pre-launch Report
+console.log('[SERVER] Ensuring Google test user...');
+try {
+  const testEmail = 'google-test@envisionpaths.com';
+  const testPassword = 'Password123!';
+  const hashedPassword = await bcrypt.hash(testPassword, 10);
+  
+  const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(testEmail);
+  if (!existingUser) {
+    db.prepare('INSERT INTO users (email, password, plan_type, is_admin) VALUES (?, ?, ?, ?)').run(testEmail, hashedPassword, 'pro', 0);
+    console.log('[SERVER] Google test user created successfully');
+  } else {
+    // Ensure password and plan are correct even if user exists
+    db.prepare('UPDATE users SET password = ?, plan_type = ?, two_factor_enabled = 0 WHERE email = ?').run(hashedPassword, 'pro', testEmail);
+    console.log('[SERVER] Google test user updated successfully');
+  }
+} catch (e) {
+  console.error("[SERVER] Error creating Google test user:", e);
+}
+
 console.log('[SERVER] Starting initialization...');
 
 async function startServer() {
@@ -982,7 +1002,7 @@ async function startServer() {
         },
         body: JSON.stringify({
           contents: [{ parts: [{ text: `Say cheerfully: ${text}` }] }],
-          config: {
+          generationConfig: {
             responseModalities: ["AUDIO"],
             speechConfig: {
               voiceConfig: {
