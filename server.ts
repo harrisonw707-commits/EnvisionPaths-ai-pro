@@ -1056,7 +1056,7 @@ async function startServer() {
   });
 
   // Catch-all for unknown API routes to prevent falling through to SPA fallback
-  app.all('/api/*', (req, res) => {
+  app.all('/api/(.*)', (req, res) => {
     res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
   });
 
@@ -1069,7 +1069,7 @@ async function startServer() {
     
     app.use(vite.middlewares);
     
-    app.get('*', async (req, res, next) => {
+    app.get('(.*)', async (req, res, next) => {
       if (req.url.startsWith('/api')) return next();
       try {
         const html = await vite.transformIndexHtml(req.url, 'index.html');
@@ -1081,7 +1081,7 @@ async function startServer() {
     });
   } else {
     app.use(express.static(path.join(__dirname, 'dist')));
-    app.get('*', (req, res) => {
+    app.get('(.*)', (req, res) => {
       res.sendFile(path.join(__dirname, 'dist', 'index.html'));
     });
   }
