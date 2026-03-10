@@ -1080,10 +1080,10 @@ async function startServer() {
       }
     });
   } else {
-    const distDir = path.join(process.cwd(), "dist");
+    const distDir = path.join(process.cwd(), 'dist');
     app.use(express.static(distDir));
-    app.get("(.*)", (req, res) => {
-      res.sendFile(path.join(distDir, "index.html"));
+    app.get('(.*)', (req, res) => {
+      res.sendFile(path.join(distDir, 'index.html'));
     });
   }
 
