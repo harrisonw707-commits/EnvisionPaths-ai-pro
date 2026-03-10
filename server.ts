@@ -6,8 +6,10 @@ import Database from 'better-sqlite3';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import Stripe from 'stripe';
-import bcrypt from 'bcrypt';
+import * as bcryptjs from 'bcryptjs';
 import speakeasy from 'speakeasy';
+import { appendFileSync } from 'node:fs';
+appendFileSync('server_init.log', `[${new Date().toISOString()}] Server file loaded\n`);
 import QRCode from 'qrcode';
 
 /**
@@ -157,58 +159,65 @@ for (const migration of migrations) {
   }
 }
 
-// Ensure harrisonw707@gmail.com is an admin
-console.log('[SERVER] Ensuring admin user...');
-try {
-  db.prepare("UPDATE users SET is_admin = 1 WHERE email = 'harrisonw707@gmail.com'").run();
-} catch (e) {
-  console.warn("[SERVER] Could not promote admin user:", e);
-}
-
-// Create Google Test User for Pre-launch Report
-console.log('[SERVER] Ensuring Google test user...');
-try {
-  const testEmail = 'google-test@envisionpaths.com';
-  const testPassword = 'Password123!';
-  const hashedPassword = await bcrypt.hash(testPassword, 10);
-  
-  const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(testEmail);
-  if (!existingUser) {
-    db.prepare('INSERT INTO users (email, password, plan_type, is_admin) VALUES (?, ?, ?, ?)').run(testEmail, hashedPassword, 'pro', 0);
-    console.log('[SERVER] Google test user created successfully');
-  } else {
-    // Ensure password and plan are correct even if user exists
-    db.prepare('UPDATE users SET password = ?, plan_type = ?, two_factor_enabled = 0 WHERE email = ?').run(hashedPassword, 'pro', testEmail);
-    console.log('[SERVER] Google test user updated successfully');
-  }
-} catch (e) {
-  console.error("[SERVER] Error creating Google test user:", e);
-}
-
-// Create Vertex AI User
-console.log('[SERVER] Ensuring Vertex AI test user...');
-try {
-  const vertexEmail = 'vertex-ai-user@envisionpaths.com';
-  const vertexPassword = 'VertexPassword123!';
-  const hashedPassword = await bcrypt.hash(vertexPassword, 10);
-  
-  const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(vertexEmail);
-  if (!existingUser) {
-    db.prepare('INSERT INTO users (email, password, plan_type, is_admin) VALUES (?, ?, ?, ?)').run(vertexEmail, hashedPassword, 'elite', 0);
-    console.log('[SERVER] Vertex AI test user created successfully');
-  } else {
-    db.prepare('UPDATE users SET password = ?, plan_type = ?, two_factor_enabled = 0 WHERE email = ?').run(hashedPassword, 'elite', vertexEmail);
-    console.log('[SERVER] Vertex AI test user updated successfully');
-  }
-} catch (e) {
-  console.error("[SERVER] Error creating Vertex AI test user:", e);
-}
-
 console.log('[SERVER] Starting initialization...');
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // Ensure harrisonw707@gmail.com is an admin
+  console.log('[SERVER] Ensuring admin user...');
+  fs.appendFileSync('server_init.log', `[${new Date().toISOString()}] Initializing test users...\n`);
+  try {
+    db.prepare("UPDATE users SET is_admin = 1 WHERE email = 'harrisonw707@gmail.com'").run();
+  } catch (e) {
+    console.warn("[SERVER] Could not promote admin user:", e);
+  }
+
+  // Create Standard Test User for Pre-launch Report
+  console.log('[SERVER] Ensuring Standard test user...');
+  try {
+    const testEmail = 'standard-test@envisionpaths.com';
+    const testPassword = 'Password123!';
+    const hashedPassword = bcryptjs.hashSync(testPassword, 10);
+    
+    // Clean up old Google test user
+    db.prepare("DELETE FROM users WHERE email = 'google-test@envisionpaths.com'").run();
+    
+    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(testEmail);
+    if (!existingUser) {
+      db.prepare('INSERT INTO users (email, password, plan_type, is_admin) VALUES (?, ?, ?, ?)').run(testEmail, hashedPassword, 'pro', 0);
+      console.log('[SERVER] Standard test user created successfully');
+    } else {
+      // Ensure password and plan are correct even if user exists
+      db.prepare('UPDATE users SET password = ?, plan_type = ?, two_factor_enabled = 0 WHERE email = ?').run(hashedPassword, 'pro', testEmail);
+      console.log('[SERVER] Standard test user updated successfully');
+    }
+  } catch (e) {
+    console.error("[SERVER] Error creating Standard test user:", e);
+  }
+
+  // Create Premium AI User
+  console.log('[SERVER] Ensuring Premium AI test user...');
+  try {
+    const vertexEmail = 'premium-test@envisionpaths.com';
+    const vertexPassword = 'VertexPassword123!';
+    const hashedPassword = bcryptjs.hashSync(vertexPassword, 10);
+    
+    // Clean up old Vertex AI user
+    db.prepare("DELETE FROM users WHERE email = 'vertex-ai-user@envisionpaths.com'").run();
+    
+    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(vertexEmail);
+    if (!existingUser) {
+      db.prepare('INSERT INTO users (email, password, plan_type, is_admin) VALUES (?, ?, ?, ?)').run(vertexEmail, hashedPassword, 'elite', 0);
+      console.log('[SERVER] Premium AI test user created successfully');
+    } else {
+      db.prepare('UPDATE users SET password = ?, plan_type = ?, two_factor_enabled = 0 WHERE email = ?').run(hashedPassword, 'elite', vertexEmail);
+      console.log('[SERVER] Premium AI test user updated successfully');
+    }
+  } catch (e) {
+    console.error("[SERVER] Error creating Premium AI test user:", e);
+  }
 
   app.set('trust proxy', 1);
 
@@ -405,7 +414,7 @@ async function startServer() {
       return res.status(400).json({ error: 'Email and password are required' });
     }
     try {
-      const hashedPassword = await bcrypt.hash(password, 10);
+      const hashedPassword = await bcryptjs.hash(password, 10);
       let userId: number | bigint;
       try {
         const result = db.prepare('INSERT INTO users (email, password) VALUES (?, ?)').run(email, hashedPassword);
@@ -446,7 +455,7 @@ async function startServer() {
       
       if (user && user.password) {
         console.log(`[LOGIN] User found: ${email}, comparing password...`);
-        const isMatch = await bcrypt.compare(password, user.password);
+        const isMatch = await bcryptjs.compare(password, user.password);
         console.log(`[LOGIN] Password match: ${isMatch}`);
         if (isMatch) {
           // Disable 2FA for admin access
@@ -598,7 +607,7 @@ async function startServer() {
 
     const now = new Date().toISOString();
     if (user.email_verification_code === code && user.email_verification_expiry > now) {
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      const hashedPassword = await bcryptjs.hash(newPassword, 10);
       db.prepare('UPDATE users SET password = ?, email_verification_code = NULL, email_verification_expiry = NULL WHERE id = ?').run(hashedPassword, user.id);
       res.json({ success: true, message: 'Password updated successfully.' });
     } else {
@@ -984,17 +993,17 @@ async function startServer() {
       
       if (!fullUser.password) {
         // Handle users without passwords (e.g. admin bypass)
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        const hashedPassword = await bcryptjs.hash(newPassword, 10);
         db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, user.id);
         return res.json({ success: true });
       }
 
-      const isMatch = await bcrypt.compare(currentPassword, fullUser.password);
+      const isMatch = await bcryptjs.compare(currentPassword, fullUser.password);
       if (!isMatch) {
         return res.status(401).json({ error: 'Incorrect current password' });
       }
 
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      const hashedPassword = await bcryptjs.hash(newPassword, 10);
       db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, user.id);
       res.json({ success: true });
     } catch (e: any) {
