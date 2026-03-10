@@ -167,7 +167,7 @@ async function startServer() {
 
   // Ensure harrisonw707@gmail.com is an admin
   console.log('[SERVER] Ensuring admin user...');
-  fs.appendFileSync('server_init.log', `[${new Date().toISOString()}] Initializing test users...\n`);
+  appendFileSync('server_init.log', `[${new Date().toISOString()}] Initializing test users...\n`);
   try {
     db.prepare("UPDATE users SET is_admin = 1 WHERE email = 'harrisonw707@gmail.com'").run();
   } catch (e) {
