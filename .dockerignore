@@ -1,0 +1,6 @@
+node_modules
+dist
+.env
+.git
+envision.db*
+server_init.log
