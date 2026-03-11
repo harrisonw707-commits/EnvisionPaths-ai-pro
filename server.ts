@@ -915,6 +915,8 @@ async function startServer() {
     const { title, description, scheduled_at } = req.body;
     if (!title || !scheduled_at) return res.status(400).json({ error: 'Missing required fields' });
     
+    console.log(`[REMINDER] Creating reminder for user ${user.id}: ${title} at ${scheduled_at}`);
+    
     const result = db.prepare("INSERT INTO reminders (user_id, title, description, scheduled_at) VALUES (?, ?, ?, ?)").run(user.id, title, description, scheduled_at);
     res.json({ id: result.lastInsertRowid });
   });
@@ -1080,10 +1082,10 @@ async function startServer() {
       }
     });
   } else {
-    const distDir = path.join(process.cwd(), "dist");
+    const distDir = path.join(process.cwd(), 'dist');
     app.use(express.static(distDir));
-    app.get("(.*)", (req, res) => {
-      res.sendFile(path.join(distDir, "index.html"));
+    app.get('(.*)', (req, res) => {
+      res.sendFile(path.join(distDir, 'index.html'));
     });
   }
 
