@@ -29,8 +29,8 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
       <div
         className="relative w-full max-w-2xl bg-theme-surface border border-theme rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
       >
-        <div className="flex items-center justify-between p-6 border-b border-theme">
-          <h2 id={titleId} className="text-2xl font-black uppercase italic tracking-tighter text-theme-primary">{title}</h2>
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-theme">
+          <h2 id={titleId} className="text-lg sm:text-2xl font-black uppercase italic tracking-tighter text-theme-primary truncate pr-4">{title}</h2>
           <button 
             onClick={onClose}
             aria-label="Close modal"
@@ -39,7 +39,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
             <X size={24} />
           </button>
         </div>
-        <div className="p-8 overflow-y-auto custom-scrollbar">
+        <div className="p-4 sm:p-8 overflow-y-auto custom-scrollbar">
           {children}
         </div>
         <div className="p-6 border-t border-theme flex justify-end">
