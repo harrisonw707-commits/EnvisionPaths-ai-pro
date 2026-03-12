@@ -1,4 +1,4 @@
-const CACHE_NAME = 'envisionpaths-v2';
+const CACHE_NAME = 'envisionpaths-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -31,6 +31,16 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // Network-first strategy for the main page and manifest to ensure updates
+  if (event.request.mode === 'navigate' || event.request.url.includes('manifest.json')) {
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        return caches.match(event.request);
+      })
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((response) => {
       return response || fetch(event.request);
