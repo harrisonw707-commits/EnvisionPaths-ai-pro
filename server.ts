@@ -1082,49 +1082,6 @@ async function startServer() {
     }
   });
 
-  // TTS API
-  app.post("/api/tts", async (req, res) => {
-    const { text } = req.body;
-    if (!text) return res.status(400).json({ error: 'Text is required' });
-
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: `Say cheerfully: ${text}` }] }],
-          generationConfig: {
-            responseModalities: ["AUDIO"],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: 'Kore' },
-              },
-            },
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || 'TTS failed');
-      }
-
-      const data = await response.json();
-      const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      
-      if (!base64Audio) {
-        throw new Error('No audio data returned');
-      }
-
-      res.json({ audio: base64Audio });
-    } catch (error: any) {
-      console.error('[TTS ERROR]', error);
-      res.status(500).json({ error: error.message });
-    }
-  });
-
   // Catch-all for unknown API routes to prevent falling through to SPA fallback
   app.all('/api/(.*)', (req, res) => {
     res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });

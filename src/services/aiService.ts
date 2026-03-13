@@ -1,4 +1,4 @@
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 
 // Initialize with the platform-provided key
 if (!process.env.GEMINI_API_KEY) {
@@ -80,5 +80,31 @@ export async function streamContent(
   } catch (error) {
     console.error("Gemini Streaming Error:", error);
     throw new Error("Failed to stream content");
+  }
+}
+
+/**
+ * Generates speech from text using Gemini TTS.
+ */
+export async function generateSpeech(text: string): Promise<string | null> {
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: `Say cheerfully: ${text}` }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Kore' },
+          },
+        },
+      },
+    });
+
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    return base64Audio || null;
+  } catch (error) {
+    console.error("Gemini TTS Error:", error);
+    return null;
   }
 }
