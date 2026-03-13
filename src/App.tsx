@@ -161,10 +161,19 @@ export default function App() {
   }, [theme]);
 
   const [isTesterGuideOpen, setIsTesterGuideOpen] = useState(false);
-  const [lastUpdated] = useState('2026-03-13 04:30 UTC');
+  const [lastUpdated] = useState('2026-03-13 14:57 UTC');
   const [lastChecked, setLastChecked] = useState(new Date().toLocaleString());
   const [authError, setAuthError] = useState<string | null>(null);
   const [showRetry, setShowRetry] = useState(false);
+
+  useEffect(() => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === 'dummy-key') {
+      console.warn('[SYSTEM] Gemini API Key is missing or invalid.');
+    } else {
+      console.log('[SYSTEM] Gemini API Key detected and loaded.');
+    }
+  }, []);
 
   useEffect(() => {
     let timer: any;

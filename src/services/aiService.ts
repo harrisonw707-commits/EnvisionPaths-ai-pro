@@ -4,7 +4,16 @@ import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 if (!process.env.GEMINI_API_KEY) {
   console.warn("GEMINI_API_KEY is not set. AI features will not work.");
 }
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'dummy-key' });
+/**
+ * Helper to get the AI instance with the current API key.
+ */
+function getAI() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === 'dummy-key') {
+    throw new Error("Gemini API Key is missing or invalid. Please check your settings.");
+  }
+  return new GoogleGenAI({ apiKey });
+}
 
 export interface AIResponse {
   text: string;
@@ -23,6 +32,7 @@ export async function generateContent(
 
   while (retries > 0) {
     try {
+      const ai = getAI();
       console.log(`[AI] Generating content for prompt: "${prompt.substring(0, 50)}..."`);
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
@@ -65,6 +75,7 @@ export async function streamContent(
   history: any[] = []
 ): Promise<void> {
   try {
+    const ai = getAI();
     const response = await ai.models.generateContentStream({
       model: "gemini-3-flash-preview",
       contents: [
@@ -93,6 +104,7 @@ export async function streamContent(
  */
 export async function generateSpeech(text: string): Promise<string | null> {
   try {
+    const ai = getAI();
     console.log(`[TTS] Generating speech for text: "${text.substring(0, 30)}..."`);
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
