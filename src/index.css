@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --color-brand-purple: #ef4444; /* Brighter red for better contrast */
+  --color-brand-purple: #ef4444;
   --bg-main: #000000;
   --bg-surface: #18181b; /* zinc-900 */
   --bg-surface-hover: #27272a; /* zinc-800 */
@@ -16,8 +16,8 @@
   --bg-surface: #ffffff;
   --bg-surface-hover: #f1f5f9; /* slate-100 */
   --text-primary: #0f172a; /* slate-900 */
-  --text-secondary: #64748b; /* slate-500 */
-  --border-color: rgba(0, 0, 0, 0.08);
+  --text-secondary: #475569; /* slate-600 */
+  --border-color: rgba(0, 0, 0, 0.1);
   --input-bg: #ffffff;
 }
 
@@ -51,7 +51,7 @@ input, select, textarea {
 @layer utilities {
   .bg-theme-main { background-color: var(--bg-main); }
   .bg-theme-surface { background-color: var(--bg-surface); }
-  .bg-theme-surface-hover:hover { background-color: var(--bg-surface-hover); }
+  .bg-theme-surface-hover { background-color: var(--bg-surface-hover); }
   .text-theme-primary { color: var(--text-primary); }
   .text-theme-secondary { color: var(--text-secondary); }
   .border-theme { border-color: var(--border-color); }

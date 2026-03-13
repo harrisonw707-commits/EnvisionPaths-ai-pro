@@ -104,8 +104,19 @@ try {
     industry TEXT,
     score INTEGER,
     feedback TEXT,
+    status TEXT DEFAULT 'started',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS glitch_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    simulation_id INTEGER,
+    reason TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    FOREIGN KEY(simulation_id) REFERENCES simulations(id)
   );
 
   CREATE TABLE IF NOT EXISTS sessions (
@@ -745,14 +756,24 @@ async function startServer() {
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
     
-    const { simulation_id } = req.body;
+    const { simulation_id, reason } = req.body;
     if (!simulation_id) return res.status(400).json({ error: 'Simulation ID required' });
 
     try {
+      // Check for abuse: How many glitches reported in the last 24 hours?
+      const recentGlitches = db.prepare("SELECT COUNT(*) as count FROM glitch_reports WHERE user_id = ? AND created_at > datetime('now', '-1 day')").get(user.id) as { count: number };
+      
+      if (recentGlitches.count >= 3) {
+        return res.status(429).json({ error: 'You have reached the limit for glitch reports today. Please contact support if you continue to experience issues.' });
+      }
+
       // Mark the simulation as glitched so it doesn't count
       const result = db.prepare("UPDATE simulations SET status = 'glitched' WHERE id = ? AND user_id = ? AND status = 'started'").run(simulation_id, user.id);
       
       if (result.changes > 0) {
+        // Log the glitch report
+        db.prepare("INSERT INTO glitch_reports (user_id, simulation_id, reason) VALUES (?, ?, ?)").run(user.id, simulation_id, reason || 'No reason provided');
+        
         console.log(`[SIMULATION] Simulation ${simulation_id} marked as glitched by user ${user.id}`);
         res.json({ success: true, message: 'Glitch reported. This session has been refunded.' });
       } else {

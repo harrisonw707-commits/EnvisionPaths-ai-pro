@@ -18,25 +18,36 @@ export async function generateContent(
   systemInstruction?: string,
   history: any[] = []
 ): Promise<AIResponse> {
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: [
-        ...history,
-        { role: "user", parts: [{ text: prompt }] }
-      ],
-      config: {
-        systemInstruction: systemInstruction,
+  let retries = 3;
+  let lastError: any;
+
+  while (retries > 0) {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [
+          ...history,
+          { role: "user", parts: [{ text: prompt }] }
+        ],
+        config: {
+          systemInstruction: systemInstruction,
+        }
+      });
+      
+      return {
+        text: response.text || "No response generated.",
+      };
+    } catch (error) {
+      console.error(`Gemini API Error (Retries left: ${retries - 1}):`, error);
+      lastError = error;
+      retries--;
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (3 - retries))); // Exponential backoff
       }
-    });
-    
-    return {
-      text: response.text || "No response generated.",
-    };
-  } catch (error) {
-    console.error("Gemini API Error:", error);
-    throw new Error("Failed to generate content");
+    }
   }
+  
+  throw new Error("Failed to generate content after multiple attempts. Please check your connection or try again later.");
 }
 
 /**
