@@ -35,7 +35,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ content, children, position = 
     >
       {React.cloneElement(children, {
         'aria-describedby': tooltipId,
-      })}
+      } as any)}
       <AnimatePresence>
         {isVisible && (
           <motion.div
