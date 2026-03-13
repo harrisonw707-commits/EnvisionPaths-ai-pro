@@ -23,6 +23,7 @@ export async function generateContent(
 
   while (retries > 0) {
     try {
+      console.log(`[AI] Generating content for prompt: "${prompt.substring(0, 50)}..."`);
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: [
@@ -34,11 +35,15 @@ export async function generateContent(
         }
       });
       
+      console.log(`[AI] Response received successfully. Length: ${response.text?.length || 0}`);
       return {
         text: response.text || "No response generated.",
       };
-    } catch (error) {
-      console.error(`Gemini API Error (Retries left: ${retries - 1}):`, error);
+    } catch (error: any) {
+      console.error(`[AI] Gemini API Error (Retries left: ${retries - 1}):`, error);
+      if (error.message?.includes('429') || error.message?.toLowerCase().includes('quota')) {
+        console.error('[AI] Quota exceeded. Please wait a moment before trying again.');
+      }
       lastError = error;
       retries--;
       if (retries > 0) {
@@ -88,6 +93,7 @@ export async function streamContent(
  */
 export async function generateSpeech(text: string): Promise<string | null> {
   try {
+    console.log(`[TTS] Generating speech for text: "${text.substring(0, 30)}..."`);
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text: `Say cheerfully: ${text}` }] }],
@@ -102,9 +108,10 @@ export async function generateSpeech(text: string): Promise<string | null> {
     });
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    console.log(`[TTS] Speech generated. Audio data length: ${base64Audio?.length || 0}`);
     return base64Audio || null;
   } catch (error) {
-    console.error("Gemini TTS Error:", error);
+    console.error("[TTS] Gemini TTS Error:", error);
     return null;
   }
 }
