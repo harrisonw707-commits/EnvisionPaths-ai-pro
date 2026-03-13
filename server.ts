@@ -125,6 +125,15 @@ try {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS simulation_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    simulation_id INTEGER,
+    role TEXT,
+    content TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(simulation_id) REFERENCES simulations(id)
+  );
 `);
   console.log('[DB] Tables initialized successfully');
 } catch (e: any) {
@@ -671,6 +680,22 @@ async function startServer() {
     res.json({ history });
   });
 
+  app.get('/api/simulations/:id/messages', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Not authenticated' });
+    
+    const simulationId = req.params.id;
+    
+    // Verify ownership
+    const simulation = db.prepare('SELECT user_id FROM simulations WHERE id = ?').get(simulationId) as { user_id: number } | undefined;
+    if (!simulation || simulation.user_id !== user.id) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const messages = db.prepare('SELECT role, content as text, created_at as timestamp FROM simulation_messages WHERE simulation_id = ? ORDER BY created_at ASC').all(simulationId);
+    res.json({ messages });
+  });
+
   app.post('/api/simulations/start', (req, res) => {
     console.log(`[SIMULATION] Start request received for user...`);
     try {
@@ -741,13 +766,35 @@ async function startServer() {
   app.post('/api/simulations/complete', (req, res) => {
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
-    const { simulation_id, job_title, industry, score, feedback } = req.body;
+    const { simulation_id, job_title, industry, score, feedback, messages } = req.body;
     
     if (simulation_id) {
       db.prepare("UPDATE simulations SET job_title = ?, industry = ?, score = ?, feedback = ?, status = 'completed' WHERE id = ? AND user_id = ?").run(job_title, industry, score, feedback, simulation_id, user.id);
+      
+      // Save messages if provided
+      if (messages && Array.isArray(messages)) {
+        const insertMsg = db.prepare('INSERT INTO simulation_messages (simulation_id, role, content) VALUES (?, ?, ?)');
+        const transaction = db.transaction((msgs) => {
+          for (const msg of msgs) {
+            insertMsg.run(simulation_id, msg.role, msg.text);
+          }
+        });
+        transaction(messages);
+      }
     } else {
       // Fallback for older clients
-      db.prepare("INSERT INTO simulations (user_id, job_title, industry, score, feedback, status) VALUES (?, ?, ?, ?, ?, 'completed')").run(user.id, job_title, industry, score, feedback);
+      const result = db.prepare("INSERT INTO simulations (user_id, job_title, industry, score, feedback, status) VALUES (?, ?, ?, ?, ?, 'completed')").run(user.id, job_title, industry, score, feedback);
+      const newSimId = result.lastInsertRowid;
+      
+      if (messages && Array.isArray(messages)) {
+        const insertMsg = db.prepare('INSERT INTO simulation_messages (simulation_id, role, content) VALUES (?, ?, ?)');
+        const transaction = db.transaction((msgs) => {
+          for (const msg of msgs) {
+            insertMsg.run(newSimId, msg.role, msg.text);
+          }
+        });
+        transaction(messages);
+      }
     }
     res.json({ success: true });
   });
