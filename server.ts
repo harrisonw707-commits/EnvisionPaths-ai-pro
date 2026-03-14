@@ -762,10 +762,19 @@ async function startServer() {
         // 2. Import Simulations
         if (simulations && Array.isArray(simulations)) {
           const insertSim = db.prepare('INSERT OR IGNORE INTO simulations (user_id, job_title, industry, score, feedback, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+          const checkUser = db.prepare('SELECT id FROM users WHERE email = ?');
+
           for (const s of simulations) {
-            const newUserId = idMapping[s.user_id];
+            let newUserId = idMapping[s.user_id] || s.user_id;
+
+            // If no user_id mapping, try to find user by email
+            if (!newUserId && s.email) {
+              const existing = checkUser.get(s.email) as { id: number } | undefined;
+              if (existing) newUserId = existing.id;
+            }
+
             if (newUserId) {
-              insertSim.run(newUserId, s.job_title, s.industry, s.score, s.feedback, s.status, s.created_at);
+              insertSim.run(newUserId, s.job_title, s.industry, s.score, s.feedback, s.status, s.created_at || new Date().toISOString());
             }
           }
         }
