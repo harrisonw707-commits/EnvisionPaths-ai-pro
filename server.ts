@@ -772,7 +772,7 @@ async function startServer() {
 
         // 3. Import Activity Logs
         if (activity_logs && Array.isArray(activity_logs)) {
-          const insertLog = db.prepare('INSERT OR IGNORE INTO activity_logs (user_id, activity, country, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+          const insertLog = db.prepare('INSERT OR IGNORE INTO activity_logs (user_id, activity, country, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?)');
           const checkUser = db.prepare('SELECT id FROM users WHERE email = ?');
           
           for (const l of activity_logs) {
