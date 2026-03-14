@@ -703,9 +703,72 @@ async function startServer() {
         FROM activity_logs l 
         JOIN users u ON l.user_id = u.id 
         ORDER BY l.created_at DESC 
-        LIMIT 500
+        LIMIT 1000
       `).all();
       res.json({ logs });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/admin/export-data', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+
+    try {
+      const users = db.prepare('SELECT id, email, plan_type, is_admin, created_at FROM users').all();
+      const simulations = db.prepare('SELECT * FROM simulations').all();
+      const logs = db.prepare('SELECT * FROM activity_logs').all();
+      const reminders = db.prepare('SELECT * FROM reminders').all();
+      
+      res.json({
+        users,
+        simulations,
+        activity_logs: logs,
+        reminders,
+        exported_at: new Date().toISOString()
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/admin/import-data', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+
+    const { users, simulations, activity_logs, reminders } = req.body;
+
+    try {
+      const importTransaction = db.transaction(() => {
+        if (users && Array.isArray(users)) {
+          const insertUser = db.prepare('INSERT OR IGNORE INTO users (id, email, plan_type, is_admin, created_at) VALUES (?, ?, ?, ?, ?)');
+          for (const u of users) {
+            insertUser.run(u.id, u.email, u.plan_type, u.is_admin, u.created_at);
+          }
+        }
+        if (simulations && Array.isArray(simulations)) {
+          const insertSim = db.prepare('INSERT OR IGNORE INTO simulations (id, user_id, job_title, industry, score, feedback, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+          for (const s of simulations) {
+            insertSim.run(s.id, s.user_id, s.job_title, s.industry, s.score, s.feedback, s.status, s.created_at);
+          }
+        }
+        if (activity_logs && Array.isArray(activity_logs)) {
+          const insertLog = db.prepare('INSERT OR IGNORE INTO activity_logs (id, user_id, activity, country, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+          for (const l of activity_logs) {
+            insertLog.run(l.id, l.user_id, l.activity, l.country, l.ip_address, l.user_agent, l.created_at);
+          }
+        }
+        if (reminders && Array.isArray(reminders)) {
+          const insertRem = db.prepare('INSERT OR IGNORE INTO reminders (id, user_id, title, description, scheduled_at, completed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+          for (const r of reminders) {
+            insertRem.run(r.id, r.user_id, r.title, r.description, r.scheduled_at, r.completed, r.created_at);
+          }
+        }
+      });
+
+      importTransaction();
+      res.json({ success: true, message: 'Data imported successfully.' });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

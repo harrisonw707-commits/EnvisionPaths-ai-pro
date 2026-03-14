@@ -42,6 +42,7 @@ export async function generateContent(
         ],
         config: {
           systemInstruction: systemInstruction,
+          tools: [{ googleSearch: {} }]
         }
       });
       
@@ -84,6 +85,7 @@ export async function streamContent(
       ],
       config: {
         systemInstruction: systemInstruction,
+        tools: [{ googleSearch: {} }]
       }
     });
     
