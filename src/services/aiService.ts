@@ -110,12 +110,12 @@ export async function generateSpeech(text: string): Promise<string | null> {
     console.log(`[TTS] Generating speech for text: "${text.substring(0, 30)}..."`);
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `Say cheerfully: ${text}` }] }],
+      contents: [{ parts: [{ text: `Say in a professional, clear, and encouraging tone: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' },
+            prebuiltVoiceConfig: { voiceName: 'Zephyr' },
           },
         },
       },
