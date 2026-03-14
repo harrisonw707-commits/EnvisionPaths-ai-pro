@@ -699,9 +699,9 @@ async function startServer() {
 
     try {
       const logs = db.prepare(`
-        SELECT l.*, u.email 
+        SELECT l.*, IFNULL(u.email, 'Unknown User') as email 
         FROM activity_logs l 
-        JOIN users u ON l.user_id = u.id 
+        LEFT JOIN users u ON l.user_id = u.id 
         ORDER BY l.created_at DESC 
         LIMIT 1000
       `).all();
@@ -741,28 +741,54 @@ async function startServer() {
 
     try {
       const importTransaction = db.transaction(() => {
+        const idMapping: Record<number, number> = {};
+
+        // 1. Import Users and build ID mapping
         if (users && Array.isArray(users)) {
-          const insertUser = db.prepare('INSERT OR IGNORE INTO users (id, email, plan_type, is_admin, created_at) VALUES (?, ?, ?, ?, ?)');
+          const checkUser = db.prepare('SELECT id FROM users WHERE email = ?');
+          const insertUser = db.prepare('INSERT INTO users (email, plan_type, is_admin, created_at) VALUES (?, ?, ?, ?)');
+          
           for (const u of users) {
-            insertUser.run(u.id, u.email, u.plan_type, u.is_admin, u.created_at);
+            const existing = checkUser.get(u.email) as { id: number } | undefined;
+            if (existing) {
+              idMapping[u.id] = existing.id;
+            } else {
+              const result = insertUser.run(u.email, u.plan_type, u.is_admin, u.created_at);
+              idMapping[u.id] = result.lastInsertRowid as number;
+            }
           }
         }
+
+        // 2. Import Simulations
         if (simulations && Array.isArray(simulations)) {
-          const insertSim = db.prepare('INSERT OR IGNORE INTO simulations (id, user_id, job_title, industry, score, feedback, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+          const insertSim = db.prepare('INSERT OR IGNORE INTO simulations (user_id, job_title, industry, score, feedback, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
           for (const s of simulations) {
-            insertSim.run(s.id, s.user_id, s.job_title, s.industry, s.score, s.feedback, s.status, s.created_at);
+            const newUserId = idMapping[s.user_id];
+            if (newUserId) {
+              insertSim.run(newUserId, s.job_title, s.industry, s.score, s.feedback, s.status, s.created_at);
+            }
           }
         }
+
+        // 3. Import Activity Logs
         if (activity_logs && Array.isArray(activity_logs)) {
-          const insertLog = db.prepare('INSERT OR IGNORE INTO activity_logs (id, user_id, activity, country, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+          const insertLog = db.prepare('INSERT OR IGNORE INTO activity_logs (user_id, activity, country, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?)');
           for (const l of activity_logs) {
-            insertLog.run(l.id, l.user_id, l.activity, l.country, l.ip_address, l.user_agent, l.created_at);
+            const newUserId = idMapping[l.user_id];
+            if (newUserId) {
+              insertLog.run(newUserId, l.activity, l.country, l.ip_address, l.user_agent, l.created_at);
+            }
           }
         }
+
+        // 4. Import Reminders
         if (reminders && Array.isArray(reminders)) {
-          const insertRem = db.prepare('INSERT OR IGNORE INTO reminders (id, user_id, title, description, scheduled_at, completed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+          const insertRem = db.prepare('INSERT OR IGNORE INTO reminders (user_id, title, description, scheduled_at, completed, created_at) VALUES (?, ?, ?, ?, ?, ?)');
           for (const r of reminders) {
-            insertRem.run(r.id, r.user_id, r.title, r.description, r.scheduled_at, r.completed, r.created_at);
+            const newUserId = idMapping[r.user_id];
+            if (newUserId) {
+              insertRem.run(newUserId, r.title, r.description, r.scheduled_at, r.completed, r.created_at);
+            }
           }
         }
       });
@@ -770,6 +796,7 @@ async function startServer() {
       importTransaction();
       res.json({ success: true, message: 'Data imported successfully.' });
     } catch (e: any) {
+      console.error('[IMPORT ERROR]', e);
       res.status(500).json({ error: e.message });
     }
   });
