@@ -145,6 +145,17 @@ try {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(simulation_id) REFERENCES simulations(id)
   );
+
+  CREATE TABLE IF NOT EXISTS activity_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    activity TEXT,
+    country TEXT,
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
 `);
   console.log('[DB] Tables initialized successfully');
 } catch (e: any) {
@@ -301,6 +312,30 @@ async function startServer() {
       const duration = Date.now() - start;
       if (req.path.startsWith('/api')) {
         console.log(`[API] ${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
+        
+        // Log user activity for specific actions
+        const user = getSessionUser(req);
+        const trackedActions = ['/api/auth/login', '/api/auth/signup', '/api/simulations/start', '/api/simulations/complete', '/api/create-checkout-session'];
+        
+        if (user && (trackedActions.includes(req.path) || req.method !== 'GET')) {
+          try {
+            const country = (req.headers['x-appengine-country'] || req.headers['cf-ipcountry'] || req.headers['x-client-geo-country'] || 'Unknown') as string;
+            const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Unknown') as string;
+            const ua = req.headers['user-agent'] || 'Unknown';
+            const activity = `${req.method} ${req.path}`;
+            
+            db.prepare('INSERT INTO activity_logs (user_id, activity, country, ip_address, user_agent) VALUES (?, ?, ?, ?, ?)').run(
+              user.id,
+              activity,
+              country,
+              ip,
+              ua
+            );
+          } catch (e) {
+            console.error('[LOGGING ERROR]', e);
+          }
+        }
+        
         if (res.statusCode === 403) {
           console.warn(`[403 WARNING] Request to ${req.path} returned 403. Headers: ${JSON.stringify(req.headers)}`);
         }
@@ -655,6 +690,24 @@ async function startServer() {
       res.json({ success: true, user: { email: user.email, plan_type: user.plan_type }, sessionId });
     } else {
       res.status(401).json({ error: 'Invalid or expired verification code' });
+    }
+  });
+
+  app.get('/api/admin/activity-logs', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+
+    try {
+      const logs = db.prepare(`
+        SELECT l.*, u.email 
+        FROM activity_logs l 
+        JOIN users u ON l.user_id = u.id 
+        ORDER BY l.created_at DESC 
+        LIMIT 500
+      `).all();
+      res.json({ logs });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 
