@@ -772,11 +772,23 @@ async function startServer() {
 
         // 3. Import Activity Logs
         if (activity_logs && Array.isArray(activity_logs)) {
-          const insertLog = db.prepare('INSERT OR IGNORE INTO activity_logs (user_id, activity, country, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+          const insertLog = db.prepare('INSERT OR IGNORE INTO activity_logs (user_id, activity, country, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+          const checkUser = db.prepare('SELECT id FROM users WHERE email = ?');
+          
           for (const l of activity_logs) {
-            const newUserId = idMapping[l.user_id];
+            let newUserId = idMapping[l.user_id] || l.user_id;
+            
+            // If no user_id mapping, try to find user by email
+            if (!newUserId && l.email) {
+              const existing = checkUser.get(l.email) as { id: number } | undefined;
+              if (existing) newUserId = existing.id;
+            }
+
             if (newUserId) {
-              insertLog.run(newUserId, l.activity, l.country, l.ip_address, l.user_agent, l.created_at);
+              insertLog.run(newUserId, l.activity, l.country, l.ip_address, l.user_agent, l.created_at || new Date().toISOString());
+            } else {
+              // Log as system/unknown if no user found
+              insertLog.run(null, l.activity, l.country, l.ip_address, l.user_agent, l.created_at || new Date().toISOString());
             }
           }
         }
