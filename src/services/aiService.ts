@@ -1,42 +1,10 @@
-import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
-
-// Initialize with the platform-provided key
-if (!process.env.GEMINI_API_KEY) {
-  console.warn("GEMINI_API_KEY is not set. AI features will not work.");
-}
-/**
- * Helper to get the AI instance with the current API key.
- */
-function getAI() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  
-  const isInvalid = !apiKey || 
-                    apiKey === 'dummy-key' || 
-                    apiKey === 'undefined' || 
-                    apiKey.length < 10;
-
-  if (isInvalid) {
-    console.error("[AI] API Key Check Failed:", { 
-      exists: !!apiKey, 
-      length: apiKey?.length || 0,
-      isDummy: apiKey === 'dummy-key',
-      isUndefinedString: apiKey === 'undefined'
-    });
-    throw new Error("Gemini API Key is missing or invalid. Please check your settings in the AI Studio menu.");
-  }
-  
-  // Log masked key for debugging
-  console.log(`[AI] Using API Key starting with: ${apiKey.substring(0, 4)}...`);
-  
-  return new GoogleGenAI({ apiKey });
-}
-
+// AI Service using backend proxy
 export interface AIResponse {
   text: string;
 }
 
 /**
- * Generates content using the Gemini model.
+ * Generates content using the Gemini model via the backend proxy.
  */
 export async function generateContent(
   prompt: string, 
@@ -48,28 +16,45 @@ export async function generateContent(
 
   while (retries > 0) {
     try {
-      const ai = getAI();
-      const modelName = "gemini-3-flash-preview";
-      console.log(`[AI] Attempting generation with ${modelName} (Retries: ${retries - 1})`);
+      const modelName = "gemini-3.1-pro-preview";
+      console.log(`[AI] Attempting generation via proxy with ${modelName} (Retries: ${retries - 1})`);
       
-      const response = await ai.models.generateContent({
-        model: modelName,
+      const payload = {
         contents: [
           ...history,
           { role: "user", parts: [{ text: prompt }] }
         ],
-        config: {
-          systemInstruction: systemInstruction,
+        systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
+        generationConfig: {
           temperature: 0.7,
         }
+      };
+
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: modelName,
+          payload
+        })
       });
+
+      const data = await response.json();
       
-      if (!response.text) {
+      if (!response.ok) {
+        throw new Error(data.error?.message || data.error || "Proxy request failed");
+      }
+
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (!text) {
         throw new Error("Gemini returned an empty response (possibly blocked by safety filters or empty output).");
       }
 
       return {
-        text: response.text,
+        text: text,
       };
     } catch (error: any) {
       lastError = error;
@@ -94,7 +79,9 @@ export async function generateContent(
 }
 
 /**
- * Streams content using the Gemini model.
+ * Streams content using the Gemini model via backend proxy.
+ * Note: Real streaming through proxy requires SSE or similar, 
+ * but for now we'll simulate it for compatibility.
  */
 export async function streamContent(
   prompt: string,
@@ -103,61 +90,52 @@ export async function streamContent(
   history: any[] = []
 ): Promise<void> {
   try {
-    const ai = getAI();
-    const modelName = "gemini-3-flash-preview";
-    console.log(`[AI] Streaming with ${modelName}`);
-
-    const response = await ai.models.generateContentStream({
-      model: modelName,
-      contents: [
-        ...history,
-        { role: "user", parts: [{ text: prompt }] }
-      ],
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.7,
-      }
-    });
-    
-    for await (const chunk of response) {
-      const text = chunk.text;
-      if (text) {
-        onChunk(text);
-      }
-    }
+    const result = await generateContent(prompt, systemInstruction, history);
+    onChunk(result.text);
   } catch (error: any) {
     console.error("[AI] Streaming Error:", error);
-    const errorMsg = error.message?.toLowerCase() || "";
-    if (errorMsg.includes('safety') || errorMsg.includes('blocked')) {
-      onChunk("I apologize, but I cannot respond to that request as it triggers my safety filters.");
-    } else {
-      throw new Error(`Streaming Error: ${error.message || "Unknown error"}`);
-    }
+    throw error;
   }
 }
 
 /**
- * Generates speech from text using Gemini TTS.
+ * Generates speech from text using Gemini TTS via backend proxy.
  */
 export async function generateSpeech(text: string): Promise<string | null> {
   try {
-    const ai = getAI();
-    console.log(`[TTS] Generating speech for text: "${text.substring(0, 30)}..."`);
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
+    const modelName = "gemini-2.5-flash-preview-tts";
+    console.log(`[TTS] Generating speech via proxy for: "${text.substring(0, 30)}..."`);
+    
+    const payload = {
       contents: [{ parts: [{ text: `Say in a professional, clear, and encouraging tone: ${text}` }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
+      generationConfig: {
+        responseModalities: ["AUDIO"],
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: { voiceName: 'Zephyr' },
           },
         },
+      }
+    };
+
+    const response = await fetch('/api/ai/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
       },
+      body: JSON.stringify({
+        model: modelName,
+        payload
+      })
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    console.log(`[TTS] Speech generated. Audio data length: ${base64Audio?.length || 0}`);
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error?.message || "TTS Proxy failed");
+    }
+
+    const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     return base64Audio || null;
   } catch (error) {
     console.error("[TTS] Gemini TTS Error:", error);

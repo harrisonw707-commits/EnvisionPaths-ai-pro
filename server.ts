@@ -444,6 +444,45 @@ async function startServer() {
     }
   });
 
+  // Gemini API Proxy
+  app.post('/api/ai/generate', async (req, res) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Gemini API Key is not configured on the server.' });
+    }
+
+    try {
+      const { model, payload } = req.body;
+      const targetModel = model || 'gemini-3.1-pro-preview';
+      
+      console.log(`[AI PROXY] Forwarding request to ${targetModel}`);
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey
+          },
+          body: JSON.stringify(payload)
+        }
+      );
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        console.error('[AI PROXY ERROR]', data);
+        return res.status(response.status).json(data);
+      }
+
+      res.json(data);
+    } catch (e: any) {
+      console.error('[AI PROXY FATAL]', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Health check
   app.get('/api/health', (req, res) => {
     try {

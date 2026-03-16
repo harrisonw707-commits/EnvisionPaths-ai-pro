@@ -17,9 +17,14 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Bypass cache for API requests and AI requests
-  if (event.request.url.includes('/api/') || event.request.url.includes('googleapis.com')) {
-    return; // Let it go to the network
+  // CRITICAL: Bypass cache for API requests and AI requests
+  // Ensure Google API calls are passed through directly if they happen
+  if (
+    event.request.url.includes('/api/') || 
+    event.request.url.includes('generativelanguage.googleapis.com') ||
+    event.request.url.includes('googleapis.com')
+  ) {
+    return; // Pass through to network
   }
 
   event.respondWith(
