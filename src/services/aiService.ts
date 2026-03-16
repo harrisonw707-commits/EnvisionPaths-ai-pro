@@ -35,34 +35,50 @@ export async function generateContent(
       const ai = getAI();
       console.log(`[AI] Generating content for prompt: "${prompt.substring(0, 50)}..."`);
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.1-pro-preview",
         contents: [
           ...history,
           { role: "user", parts: [{ text: prompt }] }
         ],
         config: {
           systemInstruction: systemInstruction,
-          tools: [{ googleSearch: {} }]
+          temperature: 0.7,
+          topP: 0.95,
+          topK: 40,
         }
       });
       
-      console.log(`[AI] Response received successfully. Length: ${response.text?.length || 0}`);
+      if (!response.text) {
+        console.warn("[AI] Response text is empty, retrying...");
+        throw new Error("Empty response from Gemini");
+      }
+
+      console.log(`[AI] Response received successfully. Length: ${response.text.length}`);
       return {
-        text: response.text || "No response generated.",
+        text: response.text,
       };
     } catch (error: any) {
       console.error(`[AI] Gemini API Error (Retries left: ${retries - 1}):`, error);
-      if (error.message?.includes('429') || error.message?.toLowerCase().includes('quota')) {
-        console.error('[AI] Quota exceeded. Please wait a moment before trying again.');
+      
+      // Check for specific error types
+      const errorMsg = error.message?.toLowerCase() || "";
+      if (errorMsg.includes('429') || errorMsg.includes('quota')) {
+        console.error('[AI] Quota exceeded.');
+      } else if (errorMsg.includes('safety') || errorMsg.includes('blocked')) {
+        console.error('[AI] Content blocked by safety filters.');
+        return { text: "I apologize, but I cannot respond to that request as it triggers my safety filters. Let's try discussing something else related to your career goals." };
       }
+      
       lastError = error;
       retries--;
       if (retries > 0) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * (3 - retries))); // Exponential backoff
+        const delay = (4 - retries) * 2000; // 2s, 4s, 6s
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
   
+  console.error("[AI] All retries failed. Last error:", lastError);
   throw new Error("Failed to generate content after multiple attempts. Please check your connection or try again later.");
 }
 
@@ -78,14 +94,14 @@ export async function streamContent(
   try {
     const ai = getAI();
     const response = await ai.models.generateContentStream({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.1-pro-preview",
       contents: [
         ...history,
         { role: "user", parts: [{ text: prompt }] }
       ],
       config: {
         systemInstruction: systemInstruction,
-        tools: [{ googleSearch: {} }]
+        temperature: 0.7,
       }
     });
     
