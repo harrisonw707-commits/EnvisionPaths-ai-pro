@@ -477,7 +477,7 @@ async function startServer() {
       res.status(500).json({ error: "AI request failed" });
     }
   });
-
+console.log("ENV GEMINI:", process.env.GEMINI_API_KEY);
   // Health check
   app.get('/api/health', (req, res) => {
     try {
