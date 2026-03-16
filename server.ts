@@ -508,6 +508,12 @@ async function startServer() {
     }
   });
 
+  app.get("/api/debug/env", (req, res) => {
+    res.json({
+      gemini: process.env.GEMINI_API_KEY ? "loaded" : "missing"
+    });
+  });
+
   // Auth Middleware
   // (getSessionUser is defined at the top of startServer scope)
 
