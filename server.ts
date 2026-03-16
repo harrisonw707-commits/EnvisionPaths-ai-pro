@@ -9,6 +9,25 @@ import Stripe from 'stripe';
 import * as bcryptjs from 'bcryptjs';
 import speakeasy from 'speakeasy';
 import { appendFileSync } from 'node:fs';
+
+// Initialize Service Account from Env
+const getServiceAccount = () => {
+  const envJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (envJson) {
+    try {
+      return JSON.parse(envJson);
+    } catch (e) {
+      console.error('[SERVER] Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON');
+    }
+  }
+  return null;
+};
+
+const serviceAccount = getServiceAccount();
+if (serviceAccount) {
+  appendFileSync('server_init.log', `[${new Date().toISOString()}] Service Account detected: ${serviceAccount.project_id}\n`);
+}
+
 appendFileSync('server_init.log', `[${new Date().toISOString()}] Server file loaded\n`);
 import QRCode from 'qrcode';
 
