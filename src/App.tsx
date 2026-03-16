@@ -187,7 +187,18 @@ export default function App() {
   }, [theme]);
 
   const [isTesterGuideOpen, setIsTesterGuideOpen] = useState(false);
-  const [lastUpdated] = useState('2026-03-13 14:57 UTC');
+  const [lastUpdated] = useState('2026-03-16 16:52 UTC');
+
+  // Debug check for API key
+  useEffect(() => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    console.log("[Debug] AI Configuration:", {
+      hasKey: !!apiKey,
+      keyLength: apiKey?.length || 0,
+      keyPrefix: apiKey ? `${apiKey.substring(0, 4)}...` : 'none',
+      env: process.env.NODE_ENV
+    });
+  }, []);
   const [lastChecked, setLastChecked] = useState(new Date().toLocaleString());
   const [authError, setAuthError] = useState<string | null>(null);
   const [showRetry, setShowRetry] = useState(false);

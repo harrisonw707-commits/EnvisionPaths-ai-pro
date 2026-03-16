@@ -9,9 +9,18 @@ if (!process.env.GEMINI_API_KEY) {
  */
 function getAI() {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === 'dummy-key') {
-    throw new Error("Gemini API Key is missing or invalid. Please check your settings.");
+  if (!apiKey || apiKey === 'dummy-key' || apiKey === 'undefined') {
+    console.error("[AI] API Key Check Failed:", { 
+      exists: !!apiKey, 
+      isDummy: apiKey === 'dummy-key',
+      isUndefinedString: apiKey === 'undefined'
+    });
+    throw new Error("Gemini API Key is missing or invalid. Please check your settings in the AI Studio menu.");
   }
+  
+  // Log masked key for debugging
+  console.log(`[AI] Using API Key starting with: ${apiKey.substring(0, 4)}...`);
+  
   return new GoogleGenAI({ apiKey });
 }
 
@@ -33,9 +42,11 @@ export async function generateContent(
   while (retries > 0) {
     try {
       const ai = getAI();
-      console.log(`[AI] Generating content for prompt: "${prompt.substring(0, 50)}..."`);
+      const modelName = "gemini-3-flash-preview";
+      console.log(`[AI] Attempting generation with ${modelName} (Retries: ${retries - 1})`);
+      
       const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
+        model: modelName,
         contents: [
           ...history,
           { role: "user", parts: [{ text: prompt }] }
@@ -43,43 +54,36 @@ export async function generateContent(
         config: {
           systemInstruction: systemInstruction,
           temperature: 0.7,
-          topP: 0.95,
-          topK: 40,
         }
       });
       
       if (!response.text) {
-        console.warn("[AI] Response text is empty, retrying...");
-        throw new Error("Empty response from Gemini");
+        throw new Error("Gemini returned an empty response (possibly blocked by safety filters or empty output).");
       }
 
-      console.log(`[AI] Response received successfully. Length: ${response.text.length}`);
       return {
         text: response.text,
       };
     } catch (error: any) {
-      console.error(`[AI] Gemini API Error (Retries left: ${retries - 1}):`, error);
-      
-      // Check for specific error types
+      lastError = error;
       const errorMsg = error.message?.toLowerCase() || "";
-      if (errorMsg.includes('429') || errorMsg.includes('quota')) {
-        console.error('[AI] Quota exceeded.');
-      } else if (errorMsg.includes('safety') || errorMsg.includes('blocked')) {
-        console.error('[AI] Content blocked by safety filters.');
-        return { text: "I apologize, but I cannot respond to that request as it triggers my safety filters. Let's try discussing something else related to your career goals." };
+      console.error(`[AI] Error during generation:`, error);
+      
+      if (errorMsg.includes('safety') || errorMsg.includes('blocked')) {
+        return { text: "I apologize, but I cannot respond to that request as it triggers my safety filters. Let's try a different interview topic." };
       }
       
-      lastError = error;
       retries--;
       if (retries > 0) {
-        const delay = (4 - retries) * 2000; // 2s, 4s, 6s
+        const delay = (4 - retries) * 1500;
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
   
-  console.error("[AI] All retries failed. Last error:", lastError);
-  throw new Error("Failed to generate content after multiple attempts. Please check your connection or try again later.");
+  const finalErrorMessage = lastError?.message || "Unknown API error";
+  console.error("[AI] All retries failed. Final error:", finalErrorMessage);
+  throw new Error(`AI Error: ${finalErrorMessage}. Please try again in a moment.`);
 }
 
 /**
@@ -93,8 +97,11 @@ export async function streamContent(
 ): Promise<void> {
   try {
     const ai = getAI();
+    const modelName = "gemini-3-flash-preview";
+    console.log(`[AI] Streaming with ${modelName}`);
+
     const response = await ai.models.generateContentStream({
-      model: "gemini-3.1-pro-preview",
+      model: modelName,
       contents: [
         ...history,
         { role: "user", parts: [{ text: prompt }] }
@@ -111,9 +118,14 @@ export async function streamContent(
         onChunk(text);
       }
     }
-  } catch (error) {
-    console.error("Gemini Streaming Error:", error);
-    throw new Error("Failed to stream content");
+  } catch (error: any) {
+    console.error("[AI] Streaming Error:", error);
+    const errorMsg = error.message?.toLowerCase() || "";
+    if (errorMsg.includes('safety') || errorMsg.includes('blocked')) {
+      onChunk("I apologize, but I cannot respond to that request as it triggers my safety filters.");
+    } else {
+      throw new Error(`Streaming Error: ${error.message || "Unknown error"}`);
+    }
   }
 }
 
