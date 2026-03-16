@@ -10,24 +10,6 @@ import * as bcryptjs from 'bcryptjs';
 import speakeasy from 'speakeasy';
 import { appendFileSync } from 'node:fs';
 
-// Initialize Service Account from Env
-const getServiceAccount = () => {
-  const envJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (envJson) {
-    try {
-      return JSON.parse(envJson);
-    } catch (e) {
-      console.error('[SERVER] Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON');
-    }
-  }
-  return null;
-};
-
-const serviceAccount = getServiceAccount();
-if (serviceAccount) {
-  appendFileSync('server_init.log', `[${new Date().toISOString()}] Service Account detected: ${serviceAccount.project_id}\n`);
-}
-
 appendFileSync('server_init.log', `[${new Date().toISOString()}] Server file loaded\n`);
 import QRCode from 'qrcode';
 
@@ -469,7 +451,9 @@ async function startServer() {
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      return res.status(500).json({ error: 'Gemini API Key is not configured on the server.' });
+      return res.status(500).json({
+        error: "Gemini API Key is not configured on the server."
+      });
     }
 
     try {
@@ -486,10 +470,11 @@ async function startServer() {
       );
 
       const data = await response.json();
-      res.status(response.status).json(data);
-    } catch (e: any) {
-      console.error('[AI PROXY FATAL]', e);
-      res.status(500).json({ error: e.message });
+      res.json(data);
+
+    } catch (err) {
+      console.error("Gemini request failed:", err);
+      res.status(500).json({ error: "AI request failed" });
     }
   });
 
@@ -518,7 +503,37 @@ async function startServer() {
   // (getSessionUser is defined at the top of startServer scope)
 
   // API Routes
+app.post('/api/ai/generate', async (req, res) => {
+  const { model, payload } = req.body;
+  const apiKey = process.env.GEMINI_API_KEY;
 
+  if (!apiKey) {
+    return res.status(500).json({
+      error: 'Gemini API Key is not configured on the server.'
+    });
+  }
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    const data = await response.json();
+    res.json(data);
+
+  } catch (error) {
+    console.error('Gemini request failed:', error);
+    res.status(500).json({ error: 'AI request failed' });
+  }
+});
   app.post('/api/auth/signup', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
