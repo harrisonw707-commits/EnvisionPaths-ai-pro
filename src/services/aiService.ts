@@ -9,9 +9,16 @@ if (!process.env.GEMINI_API_KEY) {
  */
 function getAI() {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === 'dummy-key' || apiKey === 'undefined') {
+  
+  const isInvalid = !apiKey || 
+                    apiKey === 'dummy-key' || 
+                    apiKey === 'undefined' || 
+                    apiKey.length < 10;
+
+  if (isInvalid) {
     console.error("[AI] API Key Check Failed:", { 
       exists: !!apiKey, 
+      length: apiKey?.length || 0,
       isDummy: apiKey === 'dummy-key',
       isUndefinedString: apiKey === 'undefined'
     });

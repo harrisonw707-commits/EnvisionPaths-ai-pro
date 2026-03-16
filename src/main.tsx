@@ -11,6 +11,16 @@ createRoot(document.getElementById('root')!).render(
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
+    // Unregister any old service workers that might be causing issues
+    navigator.serviceWorker.getRegistrations().then(registrations => {
+      for (let registration of registrations) {
+        if (registration.active && !registration.active.scriptURL.includes('sw.js')) {
+          console.log('[SW] Unregistering old service worker:', registration.active.scriptURL);
+          registration.unregister();
+        }
+      }
+    });
+
     navigator.serviceWorker.register('/sw.js').then(registration => {
       console.log('SW registered: ', registration);
     }).catch(registrationError => {
