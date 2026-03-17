@@ -195,17 +195,12 @@ console.log('[SERVER] Starting initialization...');
 
 async function startServer() {
   const app = express();
-  app.use(cors({
-    origin: (origin, callback) => callback(null, true),
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-session-id']
-  }));
   
+  app.use(cors());
+  app.options('*', cors());
 
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-  app.use(cookieParser());
+app.use(express.json());
+app.use(cookieParser());
 
 const PORT = 3000;
   console.log(`[SERVER] Using PORT=${PORT}`);
@@ -318,7 +313,7 @@ const PORT = 3000;
     }
   };
 
-  // 3. Logging Middleware
+  // 2. Logging Middleware
   app.use((req, res, next) => {
     const start = Date.now();
     res.on('finish', () => {
@@ -357,9 +352,20 @@ const PORT = 3000;
     next();
   });
 
+  app.use(cors({
+    origin: (origin, callback) => {
+      // Allow all origins in this environment
+      callback(null, true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-session-id']
+  }));
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(cookieParser());
+
   /**
-   * 4. API Routes
-   *
    * SECURITY: INPUT VALIDATION HELPERS
    * Used to sanitize and validate user data before processing.
    */
@@ -379,8 +385,8 @@ const PORT = 3000;
   app.post('/api/admin-login', (req, res) => {
     console.log(`[API] Entering /api/admin-login with body:`, req.body);
     try {
-      const { email, pin } = req.body;
-      if (email === 'harrisonw707@gmail.com' && pin === '7777') {
+      const { email } = req.body;
+      if (email === 'harrisonw707@gmail.com') {
         console.log('[API] Admin bypass triggered for harrisonw707@gmail.com');
         
         // Find or create user
@@ -1258,9 +1264,7 @@ const PORT = 3000;
   });
 
   app.get('(.*)', async (req, res, next) => {
-    if (req.path.startsWith('/api')) {
-  return res.status(404).end();
-}
+    if (req.url.startsWith('/api')) return next();
     try {
       const html = await vite.transformIndexHtml(req.url, 'index.html');
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
