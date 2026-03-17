@@ -14,11 +14,17 @@ export default function App() {
   // Check for existing session on mount
   useEffect(() => {
     const checkSession = async () => {
+      const storedSid = localStorage.getItem('ep_sid');
       try {
-        const res = await fetch('/api/user/profile');
+        const res = await fetch('/api/user/profile', {
+          credentials: 'include',
+          headers: storedSid ? { 'x-session-id': storedSid } : {}
+        });
         if (res.ok) {
           const data = await res.json();
           setUser(data.user);
+        } else if (res.status === 401 || res.status === 403) {
+          localStorage.removeItem('ep_sid');
         }
       } catch (err) {
         console.error('Session check failed:', err);
@@ -39,6 +45,7 @@ export default function App() {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ email, password }),
       });
 
@@ -46,6 +53,10 @@ export default function App() {
 
       if (!res.ok) {
         throw new Error(data.error || 'Something went wrong');
+      }
+
+      if (data.sessionId) {
+        localStorage.setItem('ep_sid', data.sessionId);
       }
 
       setSuccess(isLogin ? 'Welcome back!' : 'Account created successfully!');
@@ -85,11 +96,16 @@ export default function App() {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+
+      if (data.sessionId) {
+        localStorage.setItem('ep_sid', data.sessionId);
+      }
 
       setUser(data.user);
       setSuccess(`Logged in as ${type}`);
@@ -123,7 +139,13 @@ export default function App() {
           </div>
           <button 
             onClick={async () => {
-              await fetch('/api/auth/logout', { method: 'POST' });
+              const storedSid = localStorage.getItem('ep_sid');
+              await fetch('/api/auth/logout', { 
+                method: 'POST',
+                credentials: 'include',
+                headers: storedSid ? { 'x-session-id': storedSid } : {}
+              });
+              localStorage.removeItem('ep_sid');
               setUser(null);
             }}
             className="text-xs text-gray-600 hover:text-red-500 transition-colors"
