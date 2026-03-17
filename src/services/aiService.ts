@@ -30,7 +30,7 @@ export async function generateContent(
         }
       };
 
-      const response = await fetch('/api/ai/generate', {
+      const response = await fetch('https://ais-dev-6utkq3firo3gcyhy4gmmv6-29479208280.us-west2.run.app/api/ai/generate',{ 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
