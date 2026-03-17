@@ -195,11 +195,11 @@ console.log('[SERVER] Starting initialization...');
 
 async function startServer() {
   const app = express();
+  app.use(cors({
+  origin: true,
+  credentials: true
+}));
   
-  app.use(cors());
-  app.options('*', (req, res) => {
-    res.sendStatus(200);
-  });
 
 app.use(express.json());
 app.use(cookieParser());
@@ -730,46 +730,31 @@ const PORT = 3000;
     }
   });
 
-  app.get('/api/admin/activity-logs', (req, res) => {
-    const user = getSessionUser(req);
-    if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
-
-    try {
-      const logs = db.prepare(`
-        SELECT l.*, IFNULL(u.email, 'Unknown User') as email 
-        FROM activity_logs l 
-        LEFT JOIN users u ON l.user_id = u.id 
-        ORDER BY l.created_at DESC 
-        LIMIT 1000
-      `).all();
-      res.json({ logs });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
   app.get('/api/admin/export-data', (req, res) => {
-    const user = getSessionUser(req);
-    if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+  try {
+    const users = db.prepare('SELECT * FROM users').all();
+    const simulations = db.prepare('SELECT * FROM simulations').all();
+    const logs = db.prepare('SELECT * FROM activity_logs').all();
+    const reminders = db.prepare('SELECT * FROM reminders').all();
 
-    try {
-      const users = db.prepare('SELECT id, email, plan_type, is_admin, created_at FROM users').all();
-      const simulations = db.prepare('SELECT * FROM simulations').all();
-      const logs = db.prepare('SELECT * FROM activity_logs').all();
-      const reminders = db.prepare('SELECT * FROM reminders').all();
-      
-      res.json({
-        users,
-        simulations,
-        activity_logs: logs,
-        reminders,
-        exported_at: new Date().toISOString()
-      });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+    res.json({
+      users,
+      simulations,
+      activity_logs: logs,
+      reminders,
+      exported_at: new Date().toISOString()
+    });
 
+  } catch (e: any) {
+    console.error("EXPORT ERROR:", e);
+
+    res.status(500).json({
+      error: e?.message || "Export failed",
+      details: e
+    });
+  }
+});
+  
   app.post('/api/admin/import-data', (req, res) => {
     const user = getSessionUser(req);
     if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
@@ -1269,25 +1254,29 @@ const PORT = 3000;
   // Catch-all for unknown API routes to prevent falling through to SPA fallback
  
 
-  // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    
-    app.use(vite.middlewares);
-    
-    app.get('(.*)', async (req, res, next) => {
-      if (req.url.startsWith('/api')) return next();
-      try {
-        const html = await vite.transformIndexHtml(req.url, 'index.html');
-        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
-      } catch (e) {
-        vite.ssrFixStacktrace(e as Error);
-        next(e);
-      }
-    });
+  const vite = await createViteServer({
+    server: { middlewareMode: true },
+    appType: 'spa',
+  });
+
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    vite.middlewares(req, res, next);
+  });
+
+  app.get('(.*)', async (req, res, next) => {
+    if (req.path.startsWith('/api')) {
+  return res.status(404).end();
+}
+    try {
+      const html = await vite.transformIndexHtml(req.url, 'index.html');
+      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+    } catch (e) {
+      vite.ssrFixStacktrace(e as Error);
+      next(e);
+    }
+  });
   } else {
     const distDir = path.join(process.cwd(), 'dist');
     app.use(express.static(distDir));
