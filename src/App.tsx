@@ -83,7 +83,7 @@ import {
   PieChart,
   Pie
 } from 'recharts';
-import { generateContent, generateSpeech, generateImage, generateVideo } from './services/aiService';
+import { generateContent, generateSpeech } from './services/aiService';
 import { Tooltip } from './components/Tooltip';
 import { Modal } from './components/Modal';
 
@@ -122,84 +122,7 @@ const VoiceVisualizer = () => (
   </div>
 );
 
-const CoachAvatar = ({ url, videoUrl, isGenerating, isTyping, isSpeaking, theme }: { url: string | null, videoUrl?: string | null, isGenerating: boolean, isTyping: boolean, isSpeaking: boolean, theme: 'dark' | 'light' }) => {
-  return (
-    <div className="relative w-full aspect-square rounded-3xl overflow-hidden border border-theme bg-theme-surface shadow-2xl group">
-      {isGenerating ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-theme-surface">
-          <div className="w-12 h-12 border-4 border-red-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500 animate-pulse">Synthesizing Coach...</p>
-        </div>
-      ) : videoUrl ? (
-        <div className={`w-full h-full transition-all duration-500 ${isSpeaking ? 'animate-nod scale-105' : 'scale-100'}`}>
-          <video 
-            src={videoUrl} 
-            autoPlay 
-            loop 
-            muted 
-            playsInline
-            className="w-full h-full object-cover grayscale-[0.2] contrast-[1.1]"
-          />
-          {isSpeaking && (
-            <div className="absolute inset-0 bg-emerald-500/5 animate-pulse pointer-events-none" />
-          )}
-          
-          {/* Status Indicators for Video */}
-          <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-            <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
-              {isSpeaking ? (
-                <VoiceVisualizer />
-              ) : (
-                <div className={`w-2 h-2 rounded-full ${isTyping ? 'bg-amber-500 animate-pulse' : 'bg-red-500'}`} />
-              )}
-              <span className="text-[8px] font-black uppercase tracking-widest text-white">
-                {isTyping ? 'Coach is Thinking' : isSpeaking ? 'Coach is Speaking' : 'Coach is Listening'}
-              </span>
-            </div>
-          </div>
-        </div>
-      ) : url ? (
-        <>
-          <motion.img 
-            src={url} 
-            alt="AI Interview Coach" 
-            className={`w-full h-full object-cover transition-all duration-700 ${isTyping || isSpeaking ? 'scale-105 brightness-110' : 'scale-100 brightness-100'} ${isSpeaking ? 'animate-breathe animate-nod' : 'animate-blink'}`}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-          />
-          {isSpeaking && (
-            <div className="absolute inset-0 border-4 border-emerald-500/30 rounded-3xl animate-pulse pointer-events-none" />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
-          
-          {/* Status Indicators */}
-          <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-            <div className="flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
-              {isSpeaking ? (
-                <VoiceVisualizer />
-              ) : (
-                <div className={`w-2 h-2 rounded-full ${isTyping ? 'bg-amber-500 animate-pulse' : 'bg-red-500'}`} />
-              )}
-              <span className="text-[8px] font-black uppercase tracking-widest text-white">
-                {isTyping ? 'Coach is Thinking' : isSpeaking ? 'Coach is Speaking' : 'Coach is Listening'}
-              </span>
-            </div>
-          </div>
 
-          {/* AI Overlay Effects */}
-          <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-red-500/30 to-transparent animate-scan" />
-          </div>
-        </>
-      ) : (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-theme-surface opacity-50">
-          <Bot size={48} className="text-theme-secondary" />
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-theme-secondary">Avatar Offline</p>
-        </div>
-      )}
-    </div>
-  );
-};
 
 export default function App() {
   const [step, setStep] = useState<AppStep>('auth');
@@ -262,9 +185,7 @@ export default function App() {
   const [interactionMode, setInteractionMode] = useState<'text' | 'voice'>('text');
   const [isListening, setIsListening] = useState(false);
   const [isAudioEnabled, setIsAudioEnabled] = useState(false);
-  const [coachAvatarUrl, setCoachAvatarUrl] = useState<string | null>(null);
-  const [coachVideoUrl, setCoachVideoUrl] = useState<string | null>(null);
-  const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false);
+
   
   // Interview tracking state
   const [questionsAsked, setQuestionsAsked] = useState(0);
@@ -1727,22 +1648,7 @@ Generated by EnvisionPaths Career Intelligence`;
       setSessionsUsed(prev => prev + 1);
       trackEvent('simulation_started', { job_title: jobTitle });
       
-      // Generate Coach Avatar in background
-      setIsGeneratingAvatar(true);
-      const avatarPrompt = `A friendly and professional interview coach, warm and encouraging expression, professional business attire, high quality, realistic portrait, cinematic lighting, ${theme === 'dark' ? 'modern dark office' : 'bright professional studio'} background.`;
-      
-      generateImage(avatarPrompt).then(url => {
-        if (url) setCoachAvatarUrl(url);
-        setIsGeneratingAvatar(false);
-      });
 
-      // If pro/elite, generate a short intro video
-      if (selectedPlan === 'pro' || selectedPlan === 'elite' || isAdmin) {
-        const videoPrompt = `A professional interview coach for ${jobTitle} speaking directly to camera, natural mouth movements and lip sync, nodding and smiling encouragingly, cinematic lighting, professional studio background.`;
-        generateVideo(videoPrompt).then(url => {
-          if (url) setCoachVideoUrl(url);
-        }).catch(err => console.error("Video generation failed:", err));
-      }
       
       const prompt = `You are a professional career coach and expert interviewer at EnvisionPaths. 
       I am applying for the position of ${jobTitle} in the ${industry} industry. 
@@ -3344,32 +3250,8 @@ Generated by EnvisionPaths Career Intelligence`;
                 </div>
               </div>
 
-              <div className="flex-1 overflow-hidden flex flex-col lg:flex-row gap-8">
-                {/* Left Column: Coach Avatar */}
-                <div className="hidden lg:block lg:w-1/3 xl:w-1/4">
-                  <div className="sticky top-0 space-y-6">
-                    <CoachAvatar 
-                      url={coachAvatarUrl} 
-                      videoUrl={coachVideoUrl}
-                      isGenerating={isGeneratingAvatar} 
-                      isTyping={isTyping} 
-                      isSpeaking={isSpeaking}
-                      theme={theme} 
-                    />
-                    
-                    <div className="p-6 bg-theme-surface border border-theme rounded-3xl shadow-xl">
-                      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-theme-secondary mb-4 flex items-center gap-2">
-                        <Info size={12} className="text-red-500" />
-                        Coach Insights
-                      </h3>
-                      <p className="text-xs text-theme-secondary leading-relaxed">
-                        Your coach is analyzing your body language, tone, and content in real-time to provide personalized feedback.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right Column: Chat Interface */}
+              <div className="flex-1 overflow-hidden flex flex-col gap-8">
+                {/* Chat Interface */}
                 <div className="flex-1 flex flex-col min-h-0">
                   <div className="flex-1 overflow-y-auto space-y-8 pb-8 px-2 scrollbar-hide">
                     {(!selectedPlan || selectedPlan === 'free') && (
@@ -3381,19 +3263,7 @@ Generated by EnvisionPaths Career Intelligence`;
                       </div>
                     )}
                     
-                    {/* Mobile Avatar (Visible only on small screens) */}
-                    <div className="lg:hidden mb-8">
-                      <div className="w-32 h-32 mx-auto">
-                        <CoachAvatar 
-                          url={coachAvatarUrl} 
-                          videoUrl={coachVideoUrl}
-                          isGenerating={isGeneratingAvatar} 
-                          isTyping={isTyping} 
-                          isSpeaking={isSpeaking}
-                          theme={theme} 
-                        />
-                      </div>
-                    </div>
+
 
                     {messages.map((msg, i) => (
                   <motion.div 
