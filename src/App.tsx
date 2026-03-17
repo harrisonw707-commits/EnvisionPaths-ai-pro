@@ -15,7 +15,7 @@ export default function App() {
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const res = await fetch('/api/auth/me');
+        const res = await fetch('/api/user/profile');
         if (res.ok) {
           const data = await res.json();
           setUser(data.user);
@@ -58,6 +58,14 @@ export default function App() {
   };
 
   const handleQuickLogin = async (type: 'admin' | 'standard' | 'premium') => {
+    if (type === 'admin') {
+      const pin = prompt('Enter Admin PIN:');
+      if (pin !== '7777') {
+        setError('Invalid Admin PIN');
+        return;
+      }
+    }
+
     setLoading(true);
     setError(null);
     
@@ -66,7 +74,7 @@ export default function App() {
 
     if (type === 'admin') {
       endpoint = '/api/admin-login';
-      payload = { email: 'harrisonw707@gmail.com' };
+      payload = { email: 'harrisonw707@gmail.com', pin: '7777' };
     } else if (type === 'standard') {
       payload = { email: 'standard-test@envisionpaths.com', password: 'Password123!' };
     } else if (type === 'premium') {

@@ -379,8 +379,8 @@ const PORT = 3000;
   app.post('/api/admin-login', (req, res) => {
     console.log(`[API] Entering /api/admin-login with body:`, req.body);
     try {
-      const { email } = req.body;
-      if (email === 'harrisonw707@gmail.com') {
+      const { email, pin } = req.body;
+      if (email === 'harrisonw707@gmail.com' && pin === '7777') {
         console.log('[API] Admin bypass triggered for harrisonw707@gmail.com');
         
         // Find or create user
