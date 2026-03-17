@@ -196,18 +196,11 @@ console.log('[SERVER] Starting initialization...');
 async function startServer() {
   const app = express();
   
-  app.use(cors({
-    origin: (origin, callback) => {
-      // Allow all origins in this environment
-      callback(null, true);
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-session-id']
-  }));
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-  app.use(cookieParser());
+  app.use(cors());
+  app.options('*', cors());
+
+app.use(express.json());
+app.use(cookieParser());
 
 const PORT = 3000;
   console.log(`[SERVER] Using PORT=${PORT}`);
@@ -358,6 +351,19 @@ const PORT = 3000;
     });
     next();
   });
+
+  app.use(cors({
+    origin: (origin, callback) => {
+      // Allow all origins in this environment
+      callback(null, true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-session-id']
+  }));
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(cookieParser());
 
   /**
    * SECURITY: INPUT VALIDATION HELPERS
@@ -722,33 +728,50 @@ const PORT = 3000;
     }
   });
 
+  app.get('/api/admin/activity-logs', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+
+    try {
+      const logs = db.prepare(`
+        SELECT l.*, IFNULL(u.email, 'Unknown User') as email 
+        FROM activity_logs l 
+        LEFT JOIN users u ON l.user_id = u.id 
+        ORDER BY l.created_at DESC 
+        LIMIT 1000
+      `).all();
+      res.json({ logs });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get('/api/admin/export-data', (req, res) => {
     const user = getSessionUser(req);
     if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+
     try {
-    const users = db.prepare('SELECT * FROM users').all();
-    const simulations = db.prepare('SELECT * FROM simulations').all();
-    const logs = db.prepare('SELECT * FROM activity_logs').all();
-    const reminders = db.prepare('SELECT * FROM reminders').all();
+      const users = db.prepare('SELECT * FROM users').all();
+      const simulations = db.prepare('SELECT * FROM simulations').all();
+      const logs = db.prepare('SELECT * FROM activity_logs').all();
+      const reminders = db.prepare('SELECT * FROM reminders').all();
 
-    res.json({
-      users,
-      simulations,
-      activity_logs: logs,
-      reminders,
-      exported_at: new Date().toISOString()
-    });
+      res.json({
+        users,
+        simulations,
+        activity_logs: logs,
+        reminders,
+        exported_at: new Date().toISOString()
+      });
+    } catch (e: any) {
+      console.error("EXPORT ERROR:", e);
+      res.status(500).json({
+        error: e?.message || "Export failed",
+        details: e
+      });
+    }
+  });
 
-  } catch (e: any) {
-    console.error("EXPORT ERROR:", e);
-
-    res.status(500).json({
-      error: e?.message || "Export failed",
-      details: e
-    });
-  }
-});
-  
   app.post('/api/admin/import-data', (req, res) => {
     const user = getSessionUser(req);
     if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
@@ -1246,9 +1269,7 @@ const PORT = 3000;
   });
 
   // Catch-all for unknown API routes to prevent falling through to SPA fallback
-  app.all('/api/*', (req, res) => {
-    res.status(404).json({ error: 'API route not found' });
-  });
+ 
 
   if (process.env.NODE_ENV !== 'production') {
   const vite = await createViteServer({
@@ -1258,7 +1279,7 @@ const PORT = 3000;
 
   app.use((req, res, next) => {
     if (req.path.startsWith('/api')) return next();
-    vite.middlewares.handle(req, res, next);
+    vite.middlewares(req, res, next);
   });
 
   app.get('(.*)', async (req, res, next) => {
