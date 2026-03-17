@@ -195,8 +195,15 @@ console.log('[SERVER] Starting initialization...');
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 8080; // Cloud Run provides PORT (usually 8080)
-  console.log(`[SERVER] Using PORT=${PORT} (process.env.PORT=${process.env.PORT})`);
+  
+  app.use(cors());
+app.options('*', cors());
+
+app.use(express.json());
+app.use(cookieParser());
+
+const PORT = 3000;
+  console.log(`[SERVER] Using PORT=${PORT}`);
 
   // Ensure harrisonw707@gmail.com is an admin
   console.log('[SERVER] Ensuring admin user...');
@@ -367,18 +374,7 @@ async function startServer() {
 
   console.log('[SERVER] Registering API routes...');
 
-  // 3. Danger Zone / Debug Routes
-  app.post('/api/debug/reset-server', (req, res) => {
-    console.log('[DEBUG] Server reset requested');
-    try {
-      db.prepare('DELETE FROM sessions').run();
-      db.prepare('DELETE FROM simulations').run();
-      console.log('[DEBUG] Server state cleared');
-      res.json({ success: true, message: 'Server state cleared' });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+
 
   // Debug logs endpoint
   app.get('/api/debug/logs', (req, res) => {
@@ -477,7 +473,7 @@ async function startServer() {
       res.status(500).json({ error: "AI request failed" });
     }
   });
-console.log("ENV GEMINI:", process.env.GEMINI_API_KEY);
+
   // Health check
   app.get('/api/health', (req, res) => {
     try {
@@ -503,37 +499,6 @@ console.log("ENV GEMINI:", process.env.GEMINI_API_KEY);
   // (getSessionUser is defined at the top of startServer scope)
 
   // API Routes
-app.post('/api/ai/generate', async (req, res) => {
-  const { model, payload } = req.body;
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  if (!apiKey) {
-    return res.status(500).json({
-      error: 'Gemini API Key is not configured on the server.'
-    });
-  }
-
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey
-        },
-        body: JSON.stringify(payload)
-      }
-    );
-
-    const data = await response.json();
-    res.json(data);
-
-  } catch (error) {
-    console.error('Gemini request failed:', error);
-    res.status(500).json({ error: 'AI request failed' });
-  }
-});
   app.post('/api/auth/signup', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -563,7 +528,7 @@ app.post('/api/ai/generate', async (req, res) => {
       const sessionId = Math.random().toString(36).substring(2);
       db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, userId);
       res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
-      res.json({ success: true, user: { email, plan_type: 'free' } });
+      res.json({ success: true, user: { email, plan_type: 'free' }, sessionId });
     } catch (e: any) {
       console.error('[SIGNUP ERROR]', e);
       res.status(400).json({ error: 'Signup failed: ' + e.message });
@@ -892,24 +857,7 @@ app.post('/api/ai/generate', async (req, res) => {
     }
   });
 
-  app.post('/api/admin/reset-db', async (req, res) => {
-    const user = getSessionUser(req);
-    if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
 
-    try {
-      // Clear all tables except users (to keep the admin logged in)
-      db.prepare('DELETE FROM sessions WHERE user_id != ?').run(user.id);
-      db.prepare('DELETE FROM simulations').run();
-      db.prepare('DELETE FROM processed_payments').run();
-      
-      // Reset the admin's own state if needed
-      db.prepare('UPDATE users SET plan_type = \'free\' WHERE id = ?').run(user.id);
-      
-      res.json({ success: true, message: 'Database reset successfully. You remain logged in.' });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
 
   app.post('/api/auth/logout', (req, res) => {
     const sessionId = req.cookies.session_id || req.headers['x-session-id'];
@@ -1317,9 +1265,7 @@ app.post('/api/ai/generate', async (req, res) => {
   });
 
   // Catch-all for unknown API routes to prevent falling through to SPA fallback
-  app.all('/api/(.*)', (req, res) => {
-    res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
-  });
+ 
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
