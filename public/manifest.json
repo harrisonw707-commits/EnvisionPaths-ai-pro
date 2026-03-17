@@ -1,0 +1,16 @@
+{
+  "name": "EnvisionPaths AI",
+  "short_name": "EnvisionPaths",
+  "description": "Elite AI-powered interview preparation platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#dc2626",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
