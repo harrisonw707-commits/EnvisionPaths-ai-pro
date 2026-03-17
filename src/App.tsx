@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, Mail, Lock, ArrowRight, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { 
+  Shield, Mail, Lock, ArrowRight, CheckCircle2, AlertCircle, Loader2, 
+  LayoutDashboard, Play, History, Calendar, CreditCard, Settings, LogOut,
+  User, Briefcase, TrendingUp, Clock
+} from 'lucide-react';
 
 export default function App() {
   const [email, setEmail] = useState('');
@@ -10,6 +14,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState('overview');
 
   // Check for existing session on mount
   useEffect(() => {
@@ -116,43 +121,194 @@ export default function App() {
     }
   };
 
+  const handleLogout = async () => {
+    const storedSid = localStorage.getItem('ep_sid');
+    try {
+      await fetch('/api/auth/logout', { 
+        method: 'POST',
+        credentials: 'include',
+        headers: storedSid ? { 'x-session-id': storedSid } : {}
+      });
+    } catch (err) {
+      console.error('Logout failed:', err);
+    }
+    localStorage.removeItem('ep_sid');
+    setUser(null);
+  };
+
   if (user) {
     return (
-      <div className="min-h-screen bg-[#050505] text-white flex flex-col items-center justify-center p-6">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bg-[#111] border border-white/5 p-12 rounded-3xl text-center space-y-6"
-        >
-          <div className="w-20 h-20 bg-red-600/20 rounded-full flex items-center justify-center mx-auto">
-            <CheckCircle2 className="text-red-600" size={40} />
+      <div className="min-h-screen bg-[#050505] text-white flex">
+        {/* Sidebar */}
+        <aside className="w-64 border-r border-white/5 bg-[#0a0a0a] flex flex-col">
+          <div className="p-8">
+            <h1 className="text-2xl font-black uppercase tracking-tighter italic">
+              Envision<span className="text-red-600">Paths</span>
+            </h1>
           </div>
-          <h2 className="text-3xl font-black uppercase italic">Welcome, {user.email.split('@')[0]}</h2>
-          <p className="text-gray-400">You are currently on the <span className="text-red-500 font-bold uppercase">{user.plan_type}</span> plan.</p>
-          <div className="pt-6">
+
+          <nav className="flex-1 px-4 space-y-2">
+            {[
+              { id: 'overview', icon: LayoutDashboard, label: 'Overview' },
+              { id: 'simulate', icon: Play, label: 'New Simulation' },
+              { id: 'history', icon: History, label: 'History' },
+              { id: 'schedule', icon: Calendar, label: 'Schedule' },
+              { id: 'billing', icon: CreditCard, label: 'Billing' },
+              { id: 'settings', icon: Settings, label: 'Settings' },
+            ].map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold uppercase tracking-widest transition-all ${
+                  activeTab === item.id 
+                    ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' 
+                    : 'text-gray-500 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <item.icon size={18} />
+                {item.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="p-6 border-t border-white/5">
+            <div className="bg-white/5 rounded-2xl p-4 mb-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center text-[10px] font-black">
+                  {user.email[0].toUpperCase()}
+                </div>
+                <div className="overflow-hidden">
+                  <p className="text-xs font-black uppercase truncate">{user.email.split('@')[0]}</p>
+                  <p className="text-[10px] text-red-500 font-black uppercase tracking-widest">{user.plan_type}</p>
+                </div>
+              </div>
+              <div className="text-center">
+                <span className="text-red-500 text-[9px] font-black uppercase tracking-widest animate-pulse">
+                  3 Days Left
+                </span>
+              </div>
+            </div>
             <button 
-              onClick={() => window.location.reload()}
-              className="w-full bg-white/5 hover:bg-white/10 text-white font-black uppercase tracking-widest py-4 rounded-2xl transition-all"
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 text-gray-600 hover:text-red-500 transition-colors text-xs font-black uppercase tracking-widest"
             >
-              Go to Dashboard
+              <LogOut size={14} />
+              Sign Out
             </button>
           </div>
-          <button 
-            onClick={async () => {
-              const storedSid = localStorage.getItem('ep_sid');
-              await fetch('/api/auth/logout', { 
-                method: 'POST',
-                credentials: 'include',
-                headers: storedSid ? { 'x-session-id': storedSid } : {}
-              });
-              localStorage.removeItem('ep_sid');
-              setUser(null);
-            }}
-            className="text-xs text-gray-600 hover:text-red-500 transition-colors"
-          >
-            Sign Out
-          </button>
-        </motion.div>
+        </aside>
+
+        {/* Main Content */}
+        <main className="flex-1 overflow-y-auto p-12">
+          <header className="mb-12 flex justify-between items-end">
+            <div>
+              <h2 className="text-5xl font-black uppercase tracking-tighter italic leading-none">
+                {activeTab === 'overview' ? 'Dashboard' : activeTab.replace(/([A-Z])/g, ' $1').toUpperCase()}
+              </h2>
+              <p className="text-gray-500 mt-2 font-medium">Welcome back to your strategic path.</p>
+            </div>
+            <div className="flex gap-4">
+              <div className="bg-[#111] border border-white/5 px-6 py-3 rounded-2xl">
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1">Simulations</p>
+                <p className="text-2xl font-black italic">{user.simulations_this_month || 0} / 10</p>
+              </div>
+            </div>
+          </header>
+
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-8"
+            >
+              {activeTab === 'overview' && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="col-span-2 space-y-6">
+                    <div className="bg-[#111] border border-white/5 p-8 rounded-3xl relative overflow-hidden group">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-red-600" />
+                      <h3 className="text-2xl font-black uppercase italic mb-4">Start New Session</h3>
+                      <p className="text-gray-400 mb-8 max-w-md">Ready to sharpen your skills? Our AI-powered simulation will guide you through a realistic interview scenario.</p>
+                      <button 
+                        onClick={() => setActiveTab('simulate')}
+                        className="bg-red-600 hover:bg-red-700 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest flex items-center gap-3 transition-all"
+                      >
+                        Launch Simulation
+                        <Play size={18} fill="currentColor" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-6">
+                      <div className="bg-[#111] border border-white/5 p-8 rounded-3xl">
+                        <TrendingUp className="text-red-600 mb-4" size={32} />
+                        <h4 className="text-lg font-black uppercase italic mb-2">Performance</h4>
+                        <p className="text-3xl font-black italic">84%</p>
+                        <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest">+12% from last week</p>
+                      </div>
+                      <div className="bg-[#111] border border-white/5 p-8 rounded-3xl">
+                        <Clock className="text-red-600 mb-4" size={32} />
+                        <h4 className="text-lg font-black uppercase italic mb-2">Time Spent</h4>
+                        <p className="text-3xl font-black italic">4.2h</p>
+                        <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest">Across 8 sessions</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="bg-[#111] border border-white/5 p-8 rounded-3xl">
+                      <h3 className="text-xl font-black uppercase italic mb-6">Recent Activity</h3>
+                      <div className="space-y-6">
+                        {[
+                          { label: 'System Design', date: '2h ago', score: '92' },
+                          { label: 'Behavioral', date: 'Yesterday', score: '78' },
+                          { label: 'Frontend Tech', date: '3 days ago', score: '85' },
+                        ].map((item, i) => (
+                          <div key={i} className="flex items-center justify-between border-b border-white/5 pb-4 last:border-0 last:pb-0">
+                            <div>
+                              <p className="text-sm font-black uppercase">{item.label}</p>
+                              <p className="text-[10px] text-gray-500 uppercase tracking-widest">{item.date}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-black italic text-red-500">{item.score}%</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-red-600 to-red-900 p-8 rounded-3xl">
+                      <h3 className="text-xl font-black uppercase italic mb-2">Upgrade to Elite</h3>
+                      <p className="text-xs text-white/70 mb-6">Unlock unlimited simulations and personalized AI feedback.</p>
+                      <button 
+                        onClick={() => setActiveTab('billing')}
+                        className="w-full bg-white text-red-600 py-3 rounded-xl font-black uppercase tracking-widest text-xs hover:bg-white/90 transition-all"
+                      >
+                        View Plans
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab !== 'overview' && (
+                <div className="bg-[#111] border border-white/5 p-20 rounded-[40px] text-center space-y-6">
+                  <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Loader2 className="text-gray-600 animate-spin" size={40} />
+                  </div>
+                  <h3 className="text-3xl font-black uppercase italic">Module Under Construction</h3>
+                  <p className="text-gray-500 max-w-md mx-auto">We're currently fine-tuning the {activeTab} engine. Check back in a few hours for the full experience.</p>
+                  <button 
+                    onClick={() => setActiveTab('overview')}
+                    className="text-red-500 font-black uppercase tracking-widest text-xs hover:underline"
+                  >
+                    Return to Dashboard
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </main>
       </div>
     );
   }
