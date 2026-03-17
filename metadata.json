@@ -1,0 +1,8 @@
+{
+  "name": "EnvisionPaths",
+  "description": "Strategic Interview Coaching Platform",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
