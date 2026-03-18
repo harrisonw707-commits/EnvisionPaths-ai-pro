@@ -5,6 +5,16 @@ export interface AIResponse {
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
+const DEFAULT_SYSTEM_INSTRUCTION =
+  "You are a professional AI interview coach for EnvisionPaths AI Pro. Your role is to help users prepare for job interviews through realistic practice simulations, constructive feedback, and career guidance. All conversations are professional, career-focused, and educational in nature. Always respond helpfully and encouragingly.";
+
+const SAFETY_SETTINGS = [
+  { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
+  { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
+  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
+];
+
 /**
  * Generates content using the Gemini model via the backend proxy.
  */
@@ -21,15 +31,18 @@ export async function generateContent(
       const modelName = "gemini-3.1-pro-preview";
       console.log(`[AI] Attempting generation via proxy with ${modelName} (Retries: ${retries - 1})`);
       
+      const effectiveSystemInstruction = systemInstruction || DEFAULT_SYSTEM_INSTRUCTION;
+
       const payload = {
         contents: [
           ...history,
           { role: "user", parts: [{ text: prompt }] }
         ],
-        systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
+        systemInstruction: { parts: [{ text: effectiveSystemInstruction }] },
         generationConfig: {
           temperature: 0.7,
-        }
+        },
+        safetySettings: SAFETY_SETTINGS
       };
 
       const response = await fetch(`${API_URL}/api/ai/generate`,{ 
@@ -64,7 +77,9 @@ export async function generateContent(
       console.error(`[AI] Error during generation:`, error);
       
       if (errorMsg.includes('safety') || errorMsg.includes('blocked')) {
-        return { text: "I apologize, but I cannot respond to that request as it triggers my safety filters. Let's try a different interview topic." };
+        return { 
+          text: "I wasn't able to process that message. This sometimes happens with certain phrasing — could you try rephrasing your response? I'm here to help you prepare for your interview and give you the best coaching experience possible." 
+        };
       }
       
       retries--;
@@ -117,7 +132,8 @@ export async function generateSpeech(text: string): Promise<string | null> {
             prebuiltVoiceConfig: { voiceName: 'Zephyr' },
           },
         },
-      }
+      },
+      safetySettings: SAFETY_SETTINGS
     };
 
     const response = await fetch(`${API_URL}/api/ai/generate`, {
