@@ -1,1 +1,1312 @@
-const allowedOrigins = [\n    'https://envisionpaths-36560900479.us-west1.run.app',\n    'http://localhost:3000',\n    'http://localhost:5173'\n];\n\napp.use((req, res, next) => {\n    const origin = req.headers.origin;\n    if (allowedOrigins.indexOf(origin) !== -1) {\n        res.setHeader('Access-Control-Allow-Origin', origin);\n    }\n    next();\n});\n\nconsole.log('APP_URL:', process.env.APP_URL);
+import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { createServer as createViteServer } from 'vite';
+import Database from 'better-sqlite3';
+import cookieParser from 'cookie-parser';
+import cors from 'cors';
+import Stripe from 'stripe';
+import * as bcryptjs from 'bcryptjs';
+import speakeasy from 'speakeasy';
+import { appendFileSync } from 'node:fs';
+
+appendFileSync('server_init.log', `[${new Date().toISOString()}] Server file loaded\n`);
+import QRCode from 'qrcode';
+
+/**
+ * EnvisionPaths Server Entry Point
+ *
+ * This server handles:
+ * 1. Authentication (Signup, Login, Sessions)
+ * 2. User Profile Management (Email, Password updates)
+ * 3. Interview Simulations & History
+ * 4. Practice Scheduler (Reminders)
+ * 5. Stripe Payments & Subscriptions
+ * 6. AI Integration (Gemini TTS)
+ */
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// In-memory log buffer for debugging
+const logBuffer: string[] = [];
+const originalLog = console.log;
+const originalError = console.error;
+
+process.on('uncaughtException', (err) => {
+  originalError('[CRITICAL UNCAUGHT EXCEPTION]', err);
+  logBuffer.push(`[${new Date().toISOString()}] CRITICAL ERROR: ${err.message}`);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  originalError('[UNHANDLED REJECTION]', reason);
+  logBuffer.push(`[${new Date().toISOString()}] UNHANDLED REJECTION: ${reason}`);
+});
+
+console.log = (...args: any[]) => {
+  const msg = `[${new Date().toISOString()}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}`;
+  logBuffer.push(msg);
+  if (logBuffer.length > 100) logBuffer.shift();
+  originalLog.apply(console, args);
+};
+
+console.error = (...args: any[]) => {
+  const msg = `[${new Date().toISOString()}] ERROR: ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}`;
+  logBuffer.push(msg);
+  if (logBuffer.length > 100) logBuffer.shift();
+  originalError.apply(console, args);
+};
+
+// Lazy Stripe initialization
+let stripe: Stripe | null = null;
+function getStripe() {
+  if (!stripe) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) {
+      console.warn('STRIPE_SECRET_KEY is not set. Stripe features will be disabled.');
+      return null;
+    }
+    stripe = new Stripe(key);
+  }
+  return stripe;
+}
+
+// Database Initialization
+const db = new Database('envision.db', { timeout: 5000 });
+db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
+
+// Create tables
+console.log('[DB] Initializing tables...');
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE,
+    password TEXT,
+    plan_type TEXT DEFAULT 'free',
+    plan_start_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    stripe_customer_id TEXT,
+    is_admin BOOLEAN DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS processed_payments (
+    session_id TEXT PRIMARY KEY,
+    user_id INTEGER,
+    plan_type TEXT,
+    processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS simulations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    job_title TEXT,
+    industry TEXT,
+    score INTEGER,
+    feedback TEXT,
+    status TEXT DEFAULT 'started',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS glitch_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    simulation_id INTEGER,
+    reason TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    FOREIGN KEY(simulation_id) REFERENCES simulations(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER,
+    expires_at DATETIME,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    title TEXT,
+    description TEXT,
+    scheduled_at DATETIME,
+    completed BOOLEAN DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS simulation_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    simulation_id INTEGER,
+    role TEXT,
+    content TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(simulation_id) REFERENCES simulations(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS activity_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    activity TEXT,
+    country TEXT,
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+`);
+  console.log('[DB] Tables initialized successfully');
+} catch (e: any) {
+  console.error('[DB] Error initializing tables:', e);
+}
+
+// Database Migrations: Ensure columns exist for existing databases
+console.log('[SERVER] Running migrations...');
+const migrations = [
+  "ALTER TABLE users ADD COLUMN two_factor_secret TEXT",
+  "ALTER TABLE users ADD COLUMN two_factor_enabled BOOLEAN DEFAULT 0",
+  "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0",
+  "ALTER TABLE users ADD COLUMN stripe_customer_id TEXT",
+  "ALTER TABLE users ADD COLUMN plan_type TEXT DEFAULT 'free'",
+  "ALTER TABLE users ADD COLUMN plan_start_date DATETIME DEFAULT CURRENT_TIMESTAMP",
+  "ALTER TABLE simulations ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
+  "ALTER TABLE simulations ADD COLUMN status TEXT DEFAULT 'completed'",
+  "CREATE INDEX IF NOT EXISTS idx_simulations_user_id ON simulations(user_id)",
+  "ALTER TABLE users ADD COLUMN email_verification_code TEXT",
+  "ALTER TABLE users ADD COLUMN email_verification_expiry DATETIME"
+];
+
+for (const migration of migrations) {
+  try {
+    db.exec(migration);
+    console.log(`[SERVER] Migration successful: ${migration.substring(0, 30)}...`);
+  } catch (e: any) {
+    // Ignore "duplicate column name" errors
+    if (!e.message.includes('duplicate column name')) {
+      console.warn(`[SERVER] Migration failed: ${migration}`, e.message);
+    }
+  }
+}
+
+console.log('[SERVER] Starting initialization...');
+
+async function startServer() {
+  const app = express();
+
+  // CORS: only allow requests from our own production origin (and localhost for dev)
+  const allowedOrigins = [
+    process.env.APP_URL,
+    'https://envisionpaths-36560900479.us-west1.run.app',
+    'http://localhost:3000',
+    'http://localhost:5173',
+  ].filter(Boolean) as string[];
+
+  app.use(cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, Postman, server-to-server)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.warn(`[CORS] Blocked origin: ${origin}`);
+        callback(new Error(`CORS: origin ${origin} not allowed`));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-session-id']
+  }));
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(cookieParser());
+
+const PORT = 3000;
+  console.log(`[SERVER] Using PORT=${PORT}`);
+  console.log(`[SERVER] APP_URL env = ${process.env.APP_URL || '(not set)'}`);
+  console.log(`[SERVER] Allowed CORS origins: ${allowedOrigins.join(', ')}`);
+
+  // Ensure harrisonw707@gmail.com is an admin
+  console.log('[SERVER] Ensuring admin user...');
+  appendFileSync('server_init.log', `[${new Date().toISOString()}] Initializing test users...\n`);
+  try {
+    db.prepare("UPDATE users SET is_admin = 1 WHERE email = 'harrisonw707@gmail.com'").run();
+  } catch (e) {
+    console.warn("[SERVER] Could not promote admin user:", e);
+  }
+
+  // Create Standard Test User for Pre-launch Report
+  console.log('[SERVER] Ensuring Standard test user...');
+  try {
+    const testEmail = 'standard-test@envisionpaths.com';
+    const testPassword = 'Password123!';
+    const hashedPassword = bcryptjs.hashSync(testPassword, 10);
+
+    // Clean up old Google test user
+    db.prepare("DELETE FROM users WHERE email = 'google-test@envisionpaths.com' ").run();
+
+    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(testEmail);
+    if (!existingUser) {
+      db.prepare('INSERT INTO users (email, password, plan_type, is_admin) VALUES (?, ?, ?, ?)').run(testEmail, hashedPassword, 'pro', 0);
+      console.log('[SERVER] Standard test user created successfully');
+    } else {
+      // Ensure password and plan are correct even if user exists
+      db.prepare('UPDATE users SET password = ?, plan_type = ?, two_factor_enabled = 0 WHERE email = ?').run(hashedPassword, 'pro', testEmail);
+      console.log('[SERVER] Standard test user updated successfully');
+    }
+  } catch (e) {
+    console.error("[SERVER] Error creating Standard test user:", e);
+  }
+
+  // Create Premium AI User
+  console.log('[SERVER] Ensuring Premium AI test user...');
+  try {
+    const vertexEmail = 'premium-test@envisionpaths.com';
+    const vertexPassword = 'VertexPassword123!';
+    const hashedPassword = bcryptjs.hashSync(vertexPassword, 10);
+
+    // Clean up old Vertex AI user
+    db.prepare("DELETE FROM users WHERE email = 'vertex-ai-user@envisionpaths.com'").run();
+
+    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(vertexEmail);
+    if (!existingUser) {
+      db.prepare('INSERT INTO users (email, password, plan_type, is_admin) VALUES (?, ?, ?, ?)').run(vertexEmail, hashedPassword, 'elite', 0);
+      console.log('[SERVER] Premium AI test user created successfully');
+    } else {
+      db.prepare('UPDATE users SET password = ?, plan_type = ?, two_factor_enabled = 0 WHERE email = ?').run(hashedPassword, 'elite', vertexEmail);
+      console.log('[SERVER] Premium AI test user updated successfully');
+    }
+  } catch (e) {
+    console.error("[SERVER] Error creating Premium AI test user:", e);
+  }
+
+  app.set('trust proxy', 1);
+
+  // 1. Helper Functions (Defined at top of scope)
+  const getSessionUser = (req: express.Request) => {
+    const sessionId = req.cookies.session_id || req.headers['x-session-id'];
+
+    if (!sessionId) {
+      return null;
+    }
+
+    // Handle case where header might be an array
+    const sid = Array.isArray(sessionId) ? sessionId[0] : sessionId;
+
+    try {
+      console.log(`[AUTH] Verifying session: ${sid}`);
+
+      // First check if session exists at all
+      const sessionExists = db.prepare('SELECT user_id, expires_at FROM sessions WHERE id = ?').get(sid) as { user_id: number, expires_at: string } | undefined;
+
+      if (!sessionExists) {
+        console.log(`[AUTH] Session ID not found in database: ${sid}`);
+        return null;
+      }
+
+      // Then check expiration using SQL for consistency
+      const session = db.prepare(`
+        SELECT user_id
+        FROM sessions
+        WHERE id = ? AND expires_at > datetime('now')
+      `).get(sid) as { user_id: number } | undefined;
+
+      if (!session) {
+        console.log(`[AUTH] Session expired in DB: ${sid} (Expires at: ${sessionExists.expires_at}, Current DB time: ${db.prepare("SELECT datetime('now')").get()})`);
+        return null;
+      }
+
+      const user = db.prepare(`
+        SELECT id, email, plan_type, plan_start_date, is_admin
+        FROM users
+        WHERE id = ?
+      `).get(session.user_id) as any;
+
+      if (!user) {
+        console.log(`[AUTH] User not found for session: ${session.user_id}`);
+        return null;
+      }
+
+      return user;
+    } catch (e: any) {
+      console.error(`[AUTH] DB Error in getSessionUser: ${e.message}`);
+      return null;
+    }
+  };
+
+  // 2. Logging Middleware
+  app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      if (req.path.startsWith('/api')) {
+        console.log(`[API] ${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
+
+        // Log user activity for specific actions
+        const user = getSessionUser(req);
+        const trackedActions = ['/api/auth/login', '/api/auth/signup', '/api/simulations/start', '/api/simulations/complete', '/api/create-checkout-session'];
+
+        if (user && (trackedActions.includes(req.path) || req.method !== 'GET')) {
+          try {
+            const country = (req.headers['x-appengine-country'] || req.headers['cf-ipcountry'] || req.headers['x-client-geo-country'] || 'Unknown') as string;
+            const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Unknown') as string;
+            const ua = req.headers['user-agent'] || 'Unknown';
+            const activity = `${req.method} ${req.path}`;
+
+            db.prepare('INSERT INTO activity_logs (user_id, activity, country, ip_address, user_agent) VALUES (?, ?, ?, ?, ?)').run(
+              user.id,
+              activity,
+              country,
+              ip,
+              ua
+            );
+          } catch (e) {
+            console.error('[LOGGING ERROR]', e);
+          }
+        }
+
+        if (res.statusCode === 403) {
+          console.warn(`[403 WARNING] Request to ${req.path} returned 403. Headers: ${JSON.stringify(req.headers)}`);
+        }
+      }
+    });
+    next();
+  });
+
+  /**
+   * SECURITY: INPUT VALIDATION HELPERS
+   * Used to sanitize and validate user data before processing.
+   */
+  const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const sanitizeString = (str: string) => str.trim().replace(/[<>]/g, '');
+
+  console.log('[SERVER] Registering API routes...');
+
+
+
+  // Debug logs endpoint
+  app.get('/api/debug/logs', (req, res) => {
+    res.json({ logs: logBuffer });
+  });
+
+  // 1. Admin Login (Priority)
+  app.post('/api/admin-login', (req, res) => {
+    console.log(`[API] Entering /api/admin-login with body:`, req.body);
+    try {
+      const { email } = req.body;
+      if (email === 'harrisonw707@gmail.com') {
+        console.log('[API] Admin bypass triggered for harrisonw707@gmail.com');
+
+        // Find or create user
+        let user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as any;
+        if (!user) {
+          console.log('[API] Creating new admin user');
+          const result = db.prepare('INSERT INTO users (email, is_admin) VALUES (?, 1)').run(email);
+          user = { id: Number(result.lastInsertRowid) };
+        } else {
+          db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
+        }
+
+        const sessionId = 'admin_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
+        console.log(`[API] Creating session: ${sessionId}`);
+        db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
+
+        const fullUser = db.prepare('SELECT id, email, plan_type, is_admin FROM users WHERE id = ?').get(user.id) as any;
+
+        res.cookie('session_id', sessionId, {
+          httpOnly: true,
+          secure: true,
+          sameSite: 'none',
+          maxAge: 7 * 24 * 60 * 60 * 1000
+        });
+
+        console.log('[API] Admin login success');
+        return res.json({ success: true, sessionId, user: fullUser });
+      }
+      console.log('[API] Admin login failed: Email mismatch');
+      res.status(401).json({ success: false, error: 'Admin login failed.' });
+    } catch (e: any) {
+      console.error('[API] Admin login error:', e);
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // 2. Profile (Priority)
+  app.get('/api/user/profile', (req, res) => {
+    console.log('[API] Entering /api/user/profile');
+    try {
+      const user = getSessionUser(req);
+      if (user) {
+        console.log(`[API] Profile found for: ${user.email}`);
+        const simulationsCount = db.prepare("SELECT COUNT(*) as count FROM simulations WHERE user_id = ? AND created_at > date('now', 'start of month')").get(user.id) as { count: number };
+        return res.json({ user: { ...user, simulations_this_month: simulationsCount.count } });
+      }
+      console.log('[API] No user session for profile');
+      res.status(401).json({ error: 'Not authenticated' });
+    } catch (e: any) {
+      console.error('[API] Profile error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Gemini API Proxy
+  app.post('/api/ai/generate', async (req, res) => {
+    const { model, payload } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({
+        error: "Gemini API Key is not configured on the server."
+      });
+    }
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey
+          },
+          body: JSON.stringify(payload)
+        }
+      );
+
+      const data = await response.json();
+      res.json(data);
+
+    } catch (err) {
+      console.error("Gemini request failed:", err);
+      res.status(500).json({ error: "AI request failed" });
+    }
+  });
+
+  // Health check
+  app.get('/api/health', (req, res) => {
+    try {
+      const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
+      res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        db: 'connected',
+        stats: { users: userCount.count }
+      });
+    } catch (e: any) {
+      res.status(500).json({ status: 'error', error: e.message });
+    }
+  });
+
+  app.get("/api/debug/env", (req, res) => {
+    res.json({
+      gemini: process.env.GEMINI_API_KEY ? "loaded" : "missing"
+    });
+  });
+
+  // Auth Middleware
+  // (getSessionUser is defined at the top of startServer scope)
+
+  // API Routes
+  app.post('/api/auth/signup', async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    try {
+      const hashedPassword = await bcryptjs.hash(password, 10);
+      let userId: number | bigint;
+      try {
+        const result = db.prepare('INSERT INTO users (email, password) VALUES (?, ?)').run(email, hashedPassword);
+        userId = result.lastInsertRowid;
+      } catch (e: any) {
+        if (e.message.includes('UNIQUE')) {
+          // If it's the primary user, allow them to "reset" by signing up again
+          if (email === 'harrisonw707@gmail.com') {
+            db.prepare('UPDATE users SET password = ? WHERE email = ?').run(hashedPassword, email);
+            const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: number };
+            userId = user.id;
+          } else {
+            return res.status(400).json({ error: 'Email already exists. Please sign in.' });
+          }
+        } else {
+          throw e;
+        }
+      }
+
+      const sessionId = Math.random().toString(36).substring(2);
+      db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, userId);
+      res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
+      res.json({ success: true, user: { email, plan_type: 'free' }, sessionId });
+    } catch (e: any) {
+      console.error('[SIGNUP ERROR]', e);
+      res.status(400).json({ error: 'Signup failed: ' + e.message });
+    }
+  });
+
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required' });
+      }
+
+      const user = db.prepare('SELECT id, email, password, plan_type, is_admin, two_factor_enabled, two_factor_secret FROM users WHERE email = ?').get(email) as any;
+
+      if (user && user.password) {
+        console.log(`[LOGIN] User found: ${email}, comparing password...`);
+        const isMatch = await bcryptjs.compare(password, user.password);
+        console.log(`[LOGIN] Password match: ${isMatch}`);
+        if (isMatch) {
+          // Disable 2FA for admin access
+          if (user.two_factor_enabled && !user.is_admin) {
+            console.log(`[LOGIN] 2FA required for user: ${email}`);
+            return res.json({
+              success: true,
+              requires_2fa: true,
+              userId: user.id,
+              method: user.two_factor_secret ? 'totp' : 'email'
+            });
+          }
+
+          const sessionId = Math.random().toString(36).substring(2);
+          db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
+          res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
+          return res.json({ success: true, user: { email: user.email, plan_type: user.plan_type, is_admin: user.is_admin }, sessionId });
+        }
+      }
+      res.status(401).json({ error: 'Invalid credentials' });
+    } catch (e: any) {
+      console.error('[LOGIN ERROR]', e);
+      res.status(500).json({ error: 'Login failed: ' + e.message });
+    }
+  });
+
+  app.post('/api/auth/send-email-code', (req, res) => {
+    const { userId } = req.body;
+    const user = db.prepare('SELECT id, email FROM users WHERE id = ?').get(userId) as any;
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    db.prepare('UPDATE users SET email_verification_code = ?, email_verification_expiry = ? WHERE id = ?').run(code, expiry, user.id);
+
+    console.log(`[2FA] EMAIL CODE FOR ${user.email}: ${code}`);
+    res.json({ success: true });
+  });
+
+  app.post('/api/auth/login-2fa', async (req, res) => {
+    const { userId, code, method } = req.body;
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any;
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    let isValid = false;
+    if (method === 'totp' && user.two_factor_secret) {
+      isValid = speakeasy.totp.verify({
+        secret: user.two_factor_secret,
+        encoding: 'base32',
+        token: code
+      });
+    } else if (method === 'email') {
+      const now = new Date().toISOString();
+      if (user.email_verification_code === code && user.email_verification_expiry > now) {
+        isValid = true;
+        db.prepare('UPDATE users SET email_verification_code = NULL, email_verification_expiry = NULL WHERE id = ?').run(user.id);
+      }
+    }
+
+    if (isValid) {
+      const sessionId = Math.random().toString(36).substring(2);
+      db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
+      res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
+      res.json({ success: true, user: { email: user.email, plan_type: user.plan_type, is_admin: user.is_admin }, sessionId });
+    } else {
+      res.status(401).json({ error: 'Invalid verification code' });
+    }
+  });
+
+  app.post('/api/auth/setup-2fa', async (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    if (user.is_admin) return res.status(403).json({ error: '2FA is disabled for admin accounts' });
+
+    const secret = speakeasy.generateSecret({ name: `EnvisionPaths (${user.email})` });
+    const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url!);
+
+    db.prepare('UPDATE users SET two_factor_secret = ? WHERE id = ?').run(secret.base32, user.id);
+    res.json({ qrCodeUrl, secret: secret.base32 });
+  });
+
+  app.post('/api/auth/verify-2fa', async (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const { code } = req.body;
+
+    const userRecord = db.prepare('SELECT two_factor_secret FROM users WHERE id = ?').get(user.id) as any;
+    if (!userRecord || !userRecord.two_factor_secret) return res.status(400).json({ error: '2FA not initiated' });
+
+    const isValid = speakeasy.totp.verify({
+      secret: userRecord.two_factor_secret,
+      encoding: 'base32',
+      token: code
+    });
+
+    if (isValid) {
+      db.prepare('UPDATE users SET two_factor_enabled = 1 WHERE id = ?').run(user.id);
+      res.json({ success: true });
+    } else {
+      res.status(400).json({ error: 'Invalid code' });
+    }
+  });
+
+  app.post('/api/auth/disable-2fa', async (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    db.prepare('UPDATE users SET two_factor_enabled = 0, two_factor_secret = NULL WHERE id = ?').run(user.id);
+    res.json({ success: true });
+  });
+
+  app.post('/api/auth/forgot-password', (req, res) => {
+    const { email } = req.body;
+    const user = db.prepare('SELECT id, email FROM users WHERE email = ?').get(email) as { id: number, email: string } | undefined;
+
+    if (!user) {
+      // For security, don't reveal if user exists
+      return res.json({ success: true, message: 'If an account exists with that email, a reset code has been sent.' });
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 minutes
+
+    db.prepare('UPDATE users SET email_verification_code = ?, email_verification_expiry = ? WHERE id = ?').run(code, expiry, user.id);
+
+    console.log(`[AUTH] PASSWORD RESET CODE FOR ${user.email}: ${code}`);
+
+    res.json({ success: true, message: 'Reset code sent to your email.', userId: user.id });
+  });
+
+  app.post('/api/auth/verify-reset-code', (req, res) => {
+    const { userId, code } = req.body;
+    const user = db.prepare('SELECT id, email_verification_code, email_verification_expiry FROM users WHERE id = ?').get(userId) as { id: number, email_verification_code: string, email_verification_expiry: string } | undefined;
+
+    if (!user) return res.status(401).json({ error: 'Invalid request' });
+
+    const now = new Date().toISOString();
+    if (user.email_verification_code === code && user.email_verification_expiry > now) {
+      res.json({ success: true });
+    } else {
+      res.status(401).json({ error: 'Invalid or expired reset code' });
+    }
+  });
+
+  app.post('/api/auth/reset-password', async (req, res) => {
+    const { userId, code, newPassword } = req.body;
+    const user = db.prepare('SELECT id, email_verification_code, email_verification_expiry FROM users WHERE id = ?').get(userId) as { id: number, email_verification_code: string, email_verification_expiry: string } | undefined;
+
+    if (!user) return res.status(401).json({ error: 'Invalid request' });
+
+    const now = new Date().toISOString();
+    if (user.email_verification_code === code && user.email_verification_expiry > now) {
+      const hashedPassword = await bcryptjs.hash(newPassword, 10);
+      db.prepare('UPDATE users SET password = ?, email_verification_code = NULL, email_verification_expiry = NULL WHERE id = ?').run(hashedPassword, user.id);
+      res.json({ success: true, message: 'Password updated successfully.' });
+    } else {
+      res.status(401).json({ error: 'Invalid or expired reset code' });
+    }
+  });
+
+  app.post('/api/auth/verify-email-code', (req, res) => {
+    const { user_id, code } = req.body;
+    const user = db.prepare('SELECT id, email, plan_type, email_verification_code, email_verification_expiry FROM users WHERE id = ?').get(user_id) as { id: number, email: string, plan_type: string, email_verification_code: string, email_verification_expiry: string } | undefined;
+
+    if (!user) return res.status(401).json({ error: 'Invalid request' });
+
+    const now = new Date().toISOString();
+    const isMasterCode = code === '000000' && user.email === 'harrisonw707@gmail.com';
+
+    if (isMasterCode || (user.email_verification_code === code && user.email_verification_expiry > now)) {
+      // Clear the code after use
+      db.prepare('UPDATE users SET email_verification_code = NULL, email_verification_expiry = NULL WHERE id = ?').run(user.id);
+
+      const sessionId = Math.random().toString(36).substring(2);
+      db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
+      res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
+      res.json({ success: true, user: { email: user.email, plan_type: user.plan_type }, sessionId });
+    } else {
+      res.status(401).json({ error: 'Invalid or expired verification code' });
+    }
+  });
+
+  app.get('/api/admin/export-data', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+    try {
+    const users = db.prepare('SELECT * FROM users').all();
+    const simulations = db.prepare('SELECT * FROM simulations').all();
+    const logs = db.prepare('SELECT * FROM activity_logs').all();
+    const reminders = db.prepare('SELECT * FROM reminders').all();
+
+    res.json({
+      users,
+      simulations,
+      activity_logs: logs,
+      reminders,
+      exported_at: new Date().toISOString()
+    });
+
+  } catch (e: any) {
+    console.error("EXPORT ERROR:", e);
+
+    res.status(500).json({
+      error: e?.message || "Export failed",
+      details: e
+    });
+  }
+});
+
+  app.post('/api/admin/import-data', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+
+    const { users, simulations, activity_logs, reminders } = req.body;
+
+    try {
+      const importTransaction = db.transaction(() => {
+        const idMapping: Record<number, number> = {};
+
+        // 1. Import Users and build ID mapping
+        if (users && Array.isArray(users)) {
+          const checkUser = db.prepare('SELECT id FROM users WHERE email = ?');
+          const insertUser = db.prepare('INSERT INTO users (email, plan_type, is_admin, created_at) VALUES (?, ?, ?, ?)');
+
+          for (const u of users) {
+            const existing = checkUser.get(u.email) as { id: number } | undefined;
+            if (existing) {
+              idMapping[u.id] = existing.id;
+            } else {
+              const result = insertUser.run(u.email, u.plan_type, u.is_admin, u.created_at);
+              idMapping[u.id] = result.lastInsertRowid as number;
+            }
+          }
+        }
+
+        // 2. Import Simulations
+        if (simulations && Array.isArray(simulations)) {
+          const insertSim = db.prepare('INSERT OR IGNORE INTO simulations (user_id, job_title, industry, score, feedback, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+          const checkUser = db.prepare('SELECT id FROM users WHERE email = ?');
+
+          for (const s of simulations) {
+            let newUserId = idMapping[s.user_id] || s.user_id;
+
+            // If no user_id mapping, try to find user by email
+            if (!newUserId && s.email) {
+              const existing = checkUser.get(s.email) as { id: number } | undefined;
+              if (existing) newUserId = existing.id;
+            }
+
+            if (newUserId) {
+              insertSim.run(newUserId, s.job_title, s.industry, s.score, s.feedback, s.status, s.created_at || new Date().toISOString());
+            }
+          }
+        }
+
+        // 3. Import Activity Logs
+        if (activity_logs && Array.isArray(activity_logs)) {
+          const insertLog = db.prepare('INSERT OR IGNORE INTO activity_logs (user_id, activity, country, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+          const checkUser = db.prepare('SELECT id FROM users WHERE email = ?');
+
+          for (const l of activity_logs) {
+            let newUserId = idMapping[l.user_id] || l.user_id;
+
+            // If no user_id mapping, try to find user by email
+            if (!newUserId && l.email) {
+              const existing = checkUser.get(l.email) as { id: number } | undefined;
+              if (existing) newUserId = existing.id;
+            }
+
+            if (newUserId) {
+              insertLog.run(newUserId, l.activity, l.country, l.ip_address, l.user_agent, l.created_at || new Date().toISOString());
+            } else {
+              // Log as system/unknown if no user found
+              insertLog.run(null, l.activity, l.country, l.ip_address, l.user_agent, l.created_at || new Date().toISOString());
+            }
+          }
+        }
+
+        // 4. Import Reminders
+        if (reminders && Array.isArray(reminders)) {
+          const insertRem = db.prepare('INSERT OR IGNORE INTO reminders (user_id, title, description, scheduled_at, completed, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+          for (const r of reminders) {
+            const newUserId = idMapping[r.user_id];
+            if (newUserId) {
+              insertRem.run(newUserId, r.title, r.description, r.scheduled_at, r.completed, r.created_at);
+            }
+          }
+        }
+      });
+
+      importTransaction();
+      res.json({ success: true, message: 'Data imported successfully.' });
+    } catch (e: any) {
+      console.error('[IMPORT ERROR]', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/auth/logout', (req, res) => {
+    const sessionId = req.cookies.session_id || req.headers['x-session-id'];
+    if (sessionId) db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+    res.clearCookie('session_id');
+    res.json({ success: true });
+  });
+
+  app.get('/api/simulations/history', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Not authenticated' });
+    const history = db.prepare("SELECT id, job_title, industry, score, feedback, created_at FROM simulations WHERE user_id = ? AND status = 'completed' ORDER BY created_at DESC").all(user.id);
+    res.json({ history });
+  });
+
+  app.get('/api/simulations/:id/messages', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Not authenticated' });
+
+    const simulationId = req.params.id;
+
+    // Verify ownership
+    const simulation = db.prepare('SELECT user_id FROM simulations WHERE id = ?').get(simulationId) as { user_id: number } | undefined;
+    if (!simulation || simulation.user_id !== user.id) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const messages = db.prepare('SELECT role, content as text, created_at as timestamp FROM simulation_messages WHERE simulation_id = ? ORDER BY created_at ASC').all(simulationId);
+    res.json({ messages });
+  });
+
+  app.post('/api/simulations/start', (req, res) => {
+    console.log(`[SIMULATION] Start request received for user...`);
+    try {
+      const user = getSessionUser(req);
+      if (!user) {
+        console.warn('[SIMULATION] Start failed: Not authenticated');
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      const { job_title, industry } = req.body;
+
+      console.log(`[SIMULATION] Starting for user ${user.id} (${user.email}) - Plan: ${user.plan_type}`);
+
+      // Plan Gating Logic (Count started and completed simulations, but not glitched ones)
+      if (user.plan_type === 'free') {
+        const count = db.prepare("SELECT COUNT(*) as count FROM simulations WHERE user_id = ? AND status IN ('started', 'completed') AND created_at > date('now', 'start of month')").get(user.id) as { count: number };
+        console.log(`[SIMULATION] User ${user.id} has ${count.count} active simulations this month`);
+        if (count.count >= 2) {
+          return res.status(403).json({ error: 'Free limit reached. Upgrade for more simulations.' });
+        }
+      } else if (user.plan_type === 'beginner') {
+        const startDate = new Date(user.plan_start_date || Date.now());
+        const now = new Date();
+        const diffDays = Math.ceil((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+        console.log(`[SIMULATION] User ${user.id} beginner plan age: ${diffDays} days`);
+        if (diffDays > 30) {
+          // Downgrade to free if 30 days passed
+          console.log(`[SIMULATION] Downgrading user ${user.id} to free plan`);
+          db.prepare('UPDATE users SET plan_type = "free" WHERE id = ?').run(user.id);
+          return res.status(403).json({ error: 'Beginner plan expired. Please upgrade.' });
+        }
+      }
+
+      // Create a "started" record to track the session
+      const result = db.prepare('INSERT INTO simulations (user_id, job_title, industry, status) VALUES (?, ?, ?, ?)').run(user.id, job_title || 'Unknown', industry || 'Unknown', 'started');
+      const simulationId = result.lastInsertRowid;
+
+      console.log(`[SIMULATION] Simulation ${simulationId} started for user ${user.id}`);
+      res.json({ success: true, simulation_id: simulationId });
+    } catch (e: any) {
+      console.error(`[SIMULATION START ERROR] ${e.message}`, e.stack);
+      res.status(500).json({ error: 'Failed to start simulation: ' + e.message });
+    }
+  });
+
+  app.post('/api/simulations/report-glitch', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Not authenticated' });
+
+    const { simulation_id, reason } = req.body;
+    if (!simulation_id) return res.status(400).json({ error: 'Simulation ID required' });
+
+    try {
+      // Check for abuse: How many glitches reported in the last 24 hours?
+      const recentGlitches = db.prepare("SELECT COUNT(*) as count FROM glitch_reports WHERE user_id = ? AND created_at > datetime('now', '-1 day')").get(user.id) as { count: number };
+
+      if (recentGlitches.count >= 3) {
+        return res.status(429).json({ error: 'You have reached the limit for glitch reports today. Please contact support if you continue to experience issues.' });
+      }
+
+      // Mark the simulation as glitched so it doesn't count
+      const result = db.prepare("UPDATE simulations SET status = 'glitched' WHERE id = ? AND user_id = ? AND status = 'started' ").run(simulation_id, user.id);
+
+      if (result.changes > 0) {
+        // Log the glitch report
+        db.prepare("INSERT INTO glitch_reports (user_id, simulation_id, reason) VALUES (?, ?, ?) ").run(user.id, simulation_id, reason || 'No reason provided');
+
+        console.log(`[SIMULATION] Simulation ${simulation_id} marked as glitched by user ${user.id}`);
+        res.json({ success: true, message: 'Glitch reported. This session has been refunded.' });
+      } else {
+        res.status(400).json({ error: 'Could not report glitch for this session. It may already be completed or not found.' });
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/simulations/complete', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Not authenticated' });
+    const { simulation_id, job_title, industry, score, feedback, messages } = req.body;
+
+    if (simulation_id) {
+      db.prepare("UPDATE simulations SET job_title = ?, industry = ?, score = ?, feedback = ?, status = 'completed' WHERE id = ? AND user_id = ?").run(job_title, industry, score, feedback, simulation_id, user.id);
+
+      // Save messages if provided
+      if (messages && Array.isArray(messages)) {
+        const insertMsg = db.prepare('INSERT INTO simulation_messages (simulation_id, role, content) VALUES (?, ?, ?)');
+        const transaction = db.transaction((msgs) => {
+          for (const msg of msgs) {
+            insertMsg.run(simulation_id, msg.role, msg.text);
+          }
+        });
+        transaction(messages);
+      }
+    } else {
+      // Fallback for older clients
+      const result = db.prepare("INSERT INTO simulations (user_id, job_title, industry, score, feedback, status) VALUES (?, ?, ?, ?, ?, 'completed')").run(user.id, job_title, industry, score, feedback);
+      const newSimId = result.lastInsertRowid;
+
+      if (messages && Array.isArray(messages)) {
+        const insertMsg = db.prepare('INSERT INTO simulation_messages (simulation_id, role, content) VALUES (?, ?, ?)');
+        const transaction = db.transaction((msgs) => {
+          for (const msg of msgs) {
+            insertMsg.run(newSimId, msg.role, msg.text);
+          }
+        });
+        transaction(messages);
+      }
+    }
+    res.json({ success: true });
+  });
+
+  // Stripe Checkout Session Creation
+  app.post('/api/create-checkout-session', async (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Not authenticated' });
+
+    const { plan_type } = req.body;
+    const stripeClient = getStripe();
+    if (!stripeClient) return res.status(500).json({ error: 'Stripe is not configured' });
+
+    const prices: Record<string, string> = {
+      beginner: 'price_beginner_id', // Replace with real price IDs
+      pro: 'price_pro_id'
+    };
+
+    const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+
+    try {
+      const session = await stripeClient.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'usd',
+              product_data: {
+                name: `EnvisionPaths ${plan_type.charAt(0).toUpperCase() + plan_type.slice(1)} Plan`,
+              },
+              unit_amount: plan_type === 'beginner' ? 500 : 1500, // $5 or $15
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        success_url: `${appUrl}?session_id={CHECKOUT_SESSION_ID}&plan_type=${plan_type}`,
+        cancel_url: `${appUrl}/pricing`,
+        customer_email: user.email,
+        metadata: {
+          user_id: user.id.toString(),
+          plan_type
+        }
+      });
+
+      res.json({ url: session.url });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Stripe Session Verification
+  app.post('/api/verify-session', async (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Not authenticated' });
+
+    const { session_id } = req.body;
+    if (!session_id) return res.status(400).json({ error: 'Session ID required' });
+
+    // 1. Check if session was already processed (Replay Protection)
+    const alreadyProcessed = db.prepare('SELECT 1 FROM processed_payments WHERE session_id = ?').get(session_id);
+    if (alreadyProcessed) {
+      return res.status(400).json({ error: 'Payment already processed' });
+    }
+
+    const stripeClient = getStripe();
+    if (!stripeClient) return res.status(500).json({ error: 'Stripe is not configured' });
+
+    try {
+      // 2. Fetch session from Stripe using secret key (expanding line_items to see what was bought)
+      const session = await stripeClient.checkout.sessions.retrieve(session_id, {
+        expand: ['line_items']
+      });
+
+      // 3. Strict Verification: Must be paid, complete, and a valid checkout mode
+      const isPaid = session.payment_status === 'paid';
+      const isComplete = session.status === 'complete';
+      const isValidMode = session.mode === 'payment' || session.mode === 'subscription';
+
+      if (isPaid && isComplete && isValidMode) {
+        // 4. Authoritative Source: Strict Price ID Whitelisting (The Law)
+        const PRICE_MAP: Record<string, string> = {
+          'price_beginner_id': 'beginner',
+          'price_pro_id': 'pro'
+        };
+
+        const lineItem = session.line_items?.data?.[0];
+        const priceId = lineItem?.price?.id;
+        const plan_type = priceId ? PRICE_MAP[priceId] : undefined;
+
+        if (!plan_type) {
+          console.error(`[STRIPE ERROR] Unknown or missing Price ID (${priceId}) for session ${session_id}. Rejection mandatory.`);
+          return res.status(400).json({ error: 'Unauthorized product: Price ID not whitelisted' });
+        }
+
+        // 5. Safety Net: Validate amount and currency
+        const amount = session.amount_total;
+        const currency = session.currency?.toLowerCase();
+        const expectedAmount = plan_type === 'beginner' ? 500 : 1500;
+
+        if (currency !== 'usd' || (amount && amount < expectedAmount)) {
+          console.error(`[STRIPE ERROR] Amount/Currency safety check failed for session ${session_id}. Expected >= ${expectedAmount} usd, got ${amount} ${currency}`);
+          return res.status(400).json({ error: 'Payment amount or currency mismatch' });
+        }
+
+        // 6. Customer Verification: Ensure session belongs to this user
+        const client_ref = session.client_reference_id;
+        const meta_user_id = session.metadata?.user_id;
+        const stripe_customer_id = session.customer as string;
+
+        // Verify user ID matches
+        const isUserMatch = (client_ref === user.id.toString()) || (meta_user_id === user.id.toString());
+        if (!isUserMatch) {
+          console.warn(`[STRIPE] Unauthorized attempt for session ${session_id}. User ID mismatch.`);
+          return res.status(403).json({ error: 'Session does not belong to this user' });
+        }
+
+        // Verify Stripe Customer ID matches if already set for this user
+        const currentUser = db.prepare('SELECT stripe_customer_id FROM users WHERE id = ?').get(user.id) as any;
+        if (currentUser?.stripe_customer_id && stripe_customer_id && currentUser.stripe_customer_id !== stripe_customer_id) {
+          console.warn(`[STRIPE] Customer ID mismatch for user ${user.id}. Expected ${currentUser.stripe_customer_id}, got ${stripe_customer_id}`);
+          return res.status(403).json({ error: 'Stripe customer mismatch: This account is already linked to a different Stripe customer' });
+        }
+
+        // 7. Atomic Upgrade
+        const upgradeTransaction = db.transaction(() => {
+          // Update plan and associate customer ID if not already set (Persistence on first payment)
+          db.prepare(`
+            UPDATE users
+            SET plan_type = ?,
+                plan_start_date = CURRENT_TIMESTAMP,
+                stripe_customer_id = COALESCE(stripe_customer_id, ?)
+            WHERE id = ?
+          `).run(plan_type, stripe_customer_id, user.id);
+
+          // Mark the session as "consumed"
+          db.prepare('INSERT INTO processed_payments (session_id, user_id, plan_type) VALUES (?, ?, ?)').run(session_id, user.id, plan_type);
+        });
+
+        upgradeTransaction();
+
+        console.log(`[STRIPE] Plan ${plan_type} unlocked for user ${user.id} via session ${session_id}`);
+        return res.json({ success: true, plan_type });
+      }
+      res.status(400).json({ error: 'Payment not verified' });
+    } catch (e: any) {
+      console.error(`[STRIPE ERROR] ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Reminders API
+  app.get("/api/reminders", (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const reminders = db.prepare("SELECT * FROM reminders WHERE user_id = ? ORDER BY scheduled_at ASC").all(user.id);
+    res.json({ reminders });
+  });
+
+  app.post("/api/reminders", (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { title, description, scheduled_at } = req.body;
+    if (!title || !scheduled_at) return res.status(400).json({ error: 'Missing required fields' });
+
+    console.log(`[REMINDER] Creating reminder for user ${user.id}: ${title} at ${scheduled_at}`);
+
+    const result = db.prepare("INSERT INTO reminders (user_id, title, description, scheduled_at) VALUES (?, ?, ?, ?) ").run(user.id, title, description, scheduled_at);
+    res.json({ id: result.lastInsertRowid });
+  });
+
+  app.patch("/api/reminders/:id", (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { completed } = req.body;
+    db.prepare("UPDATE reminders SET completed = ? WHERE id = ? AND user_id = ? ").run(completed ? 1 : 0, req.params.id, user.id);
+    res.json({ success: true });
+  });
+
+  app.delete("/api/reminders/:id", (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    db.prepare("DELETE FROM reminders WHERE id = ? AND user_id = ? ").run(req.params.id, user.id);
+    res.json({ success: true });
+  });
+
+  // Account Deletion API
+  app.delete("/api/user/account", (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+      const deleteTransaction = db.transaction(() => {
+        db.prepare("DELETE FROM reminders WHERE user_id = ? ").run(user.id);
+        db.prepare("DELETE FROM simulations WHERE user_id = ? ").run(user.id);
+        db.prepare("DELETE FROM sessions WHERE user_id = ? ").run(user.id);
+        db.prepare("DELETE FROM processed_payments WHERE user_id = ? ").run(user.id);
+        db.prepare("DELETE FROM users WHERE id = ? ").run(user.id);
+      });
+
+      deleteTransaction();
+      res.clearCookie('session_id');
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error(`[DELETE ACCOUNT ERROR] ${e.message}`);
+      res.status(500).json({ error: 'Failed to delete account' });
+    }
+  });
+
+  // Update Email
+  app.patch('/api/user/email', async (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { newEmail } = req.body;
+    if (!newEmail) return res.status(400).json({ error: 'New email is required' });
+
+    try {
+      db.prepare('UPDATE users SET email = ? WHERE id = ?').run(newEmail, user.id);
+      res.json({ success: true, email: newEmail });
+    } catch (e: any) {
+      if (e.message.includes('UNIQUE')) {
+        return res.status(400).json({ error: 'Email already in use' });
+      }
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Update Password
+  app.patch('/api/user/password', async (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new passwords are required' });
+    }
+
+    try {
+      // Fetch full user to get password
+      const fullUser = db.prepare('SELECT password FROM users WHERE id = ?').get(user.id) as any;
+
+      if (!fullUser.password) {
+        // Handle users without passwords (e.g. admin bypass)
+        const hashedPassword = await bcryptjs.hash(newPassword, 10);
+        db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, user.id);
+        return res.json({ success: true });
+      }
+
+      const isMatch = await bcryptjs.compare(currentPassword, fullUser.password);
+      if (!isMatch) {
+        return res.status(401).json({ error: 'Incorrect current password' });
+      }
+
+      const hashedPassword = await bcryptjs.hash(newPassword, 10);
+      db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, user.id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Catch-all for unknown API routes to prevent falling through to SPA fallback
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ error: 'API route not found' });
+  });
+
+  if (process.env.NODE_ENV !== 'production') {
+  const vite = await createViteServer({
+    server: { middlewareMode: true },
+    appType: 'spa',
+  });
+
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    vite.middlewares.handle(req, res, next);
+  });
+  
+  app.get('(.*)', async (req, res, next) => {
+    if (req.url.startsWith('/api')) return next();
+    try {
+      const html = await vite.transformIndexHtml(req.url, 'index.html');
+      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+    } catch (e) {
+      vite.ssrFixStacktrace(e as Error);
+      next(e);
+    }
+  });
+  } else {
+    const distDir = path.join(process.cwd(), 'dist');
+    app.use(express.static(distDir));
+    app.get('(.*)', (req, res) => {
+      res.sendFile(path.join(distDir, 'index.html'));
+    });
+  }
+
+  // Global Error Handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('[GLOBAL ERROR]', err);
+    if (res.headersSent) return next(err);
+    res.status(err.status || 500).json({
+      error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message
+    });
+  });
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+  });
+}
+
+startServer().catch((err) => {
+  console.error('Failed to start server:', err);
+});
