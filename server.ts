@@ -192,6 +192,7 @@ for (const migration of migrations) {
 }
 
 console.log('[SERVER] Starting initialization...');
+console.log(`[SERVER] GEMINI_API_KEY status: ${process.env.GEMINI_API_KEY ? 'LOADED ✓' : 'MISSING ✗'}`);
 
 async function startServer() {
   const app = express();
