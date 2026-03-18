@@ -3,6 +3,8 @@ export interface AIResponse {
   text: string;
 }
 
+const API_URL = import.meta.env.VITE_API_URL || '';
+
 /**
  * Generates content using the Gemini model via the backend proxy.
  */
@@ -30,7 +32,7 @@ export async function generateContent(
         }
       };
 
-      const response = await fetch('/api/ai/generate',{ 
+      const response = await fetch(`${API_URL}/api/ai/generate`,{ 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -118,7 +120,7 @@ export async function generateSpeech(text: string): Promise<string | null> {
       }
     };
 
-    const response = await fetch('/api/ai/generate', {
+    const response = await fetch(`${API_URL}/api/ai/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -163,7 +165,7 @@ export async function generateImage(prompt: string): Promise<string | null> {
       }
     };
 
-    const response = await fetch('/api/ai/generate', {
+    const response = await fetch(`${API_URL}/api/ai/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -211,7 +213,7 @@ export async function generateVideo(prompt: string): Promise<string | null> {
       }
     };
 
-    let response = await fetch('/api/ai/generate-video', {
+    let response = await fetch(`${API_URL}/api/ai/generate-video`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -234,7 +236,7 @@ export async function generateVideo(prompt: string): Promise<string | null> {
     let retries = 30; // 5 minutes max
     while (!operation.done && retries > 0) {
       await new Promise(resolve => setTimeout(resolve, 10000));
-      const pollRes = await fetch(`/api/ai/operations/${operation.name}`);
+      const pollRes = await fetch(`${API_URL}/api/ai/operations/${operation.name}`);
       operation = await pollRes.json();
       retries--;
     }
@@ -242,7 +244,7 @@ export async function generateVideo(prompt: string): Promise<string | null> {
     if (operation.done && operation.response?.generatedVideos?.[0]?.video?.uri) {
       const videoUri = operation.response.generatedVideos[0].video.uri;
       // Fetch the video with the API key (handled by proxy)
-      const videoRes = await fetch(`/api/ai/video-proxy?uri=${encodeURIComponent(videoUri)}`);
+      const videoRes = await fetch(`${API_URL}/api/ai/video-proxy?uri=${encodeURIComponent(videoUri)}`);
       const blob = await videoRes.blob();
       return URL.createObjectURL(blob);
     }
