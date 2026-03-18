@@ -5,7 +5,7 @@ steps:
   
   # Push the container image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/envision-paths']
+    args: ['push', 'gcr.io/$PROJECT_ID/EnvisionPaths-ai-pro]
   
   # Deploy container image to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -13,9 +13,9 @@ steps:
     args:
       - 'run'
       - 'deploy'
-      - 'envision-paths'
+      - 'EnvisionPaths-ai-pro'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/envision-paths'
+      - 'gcr.io/$PROJECT_ID/EnvisionPaths-ai-pro'
       - '--region'
       - 'us-central1'
       - '--platform'
@@ -23,4 +23,4 @@ steps:
       - '--allow-unauthenticated'
 
 images:
-  - 'gcr.io/$PROJECT_ID/envision-paths'
+  - 'gcr.io/$PROJECT_ID/EnvisionPaths-ai-pro'
