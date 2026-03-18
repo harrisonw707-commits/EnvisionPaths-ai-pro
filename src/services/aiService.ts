@@ -18,7 +18,7 @@ export async function generateContent(
 
   while (retries > 0) {
     try {
-      const modelName = "gemini-3.1-pro-preview";
+      const modelName = "gemini-2.0-flash";
       console.log(`[AI] Attempting generation via proxy with ${modelName} (Retries: ${retries - 1})`);
       
       const payload = {
