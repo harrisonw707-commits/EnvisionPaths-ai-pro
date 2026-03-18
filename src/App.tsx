@@ -213,7 +213,7 @@ export default function App() {
   );
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('app-theme');
-    return (saved as 'dark' | 'light') || 'dark';
+    return (saved as 'dark' | 'light') || 'light';
   });
 
   useEffect(() => {
