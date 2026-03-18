@@ -1,6 +1,6 @@
 {
-  "name": "EnvisionPaths AI Pro",
-  "description": "Strategic Interview Coaching Platform",
+  "name": "EnvisionPaths-ai-pro",
+  "description": "career coaching tool",
   "requestFramePermissions": [
     "camera",
     "microphone"

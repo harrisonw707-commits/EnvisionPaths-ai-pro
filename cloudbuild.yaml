@@ -1,31 +1,26 @@
 steps:
   # Build the container image
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/envisionpaths-ai-pro', '.']
-
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/envision-paths', '.']
+  
   # Push the container image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/envisionpaths-ai-pro']
-
-  # Deploy container image to Cloud Run (preserves existing env vars with --update-env-vars fallback)
+    args: ['push', 'gcr.io/$PROJECT_ID/envision-paths']
+  
+  # Deploy container image to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - 'run'
       - 'deploy'
-      - 'envisionpaths-ai-pro'
+      - 'envision-paths'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/envisionpaths-ai-pro'
+      - 'gcr.io/$PROJECT_ID/envision-paths'
       - '--region'
-      - 'us-west1'
+      - 'us-central1'
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
-      - '--update-env-vars'
-      - 'NODE_ENV=production'
 
 images:
-  - 'gcr.io/$PROJECT_ID/envisionpaths-ai-pro'
-
-options:
-  logging: CLOUD_LOGGING_ONLY
+  - 'gcr.io/$PROJECT_ID/envision-paths'
