@@ -15,7 +15,7 @@ import QRCode from 'qrcode';
 
 /**
  * EnvisionPaths Server Entry Point
- *
+ * 
  * This server handles:
  * 1. Authentication (Signup, Login, Sessions)
  * 2. User Profile Management (Email, Password updates)
@@ -195,25 +195,11 @@ console.log('[SERVER] Starting initialization...');
 
 async function startServer() {
   const app = express();
-
-  // CORS: only allow requests from our own production origin (and localhost for dev)
-  const allowedOrigins = [
-    process.env.APP_URL,
-    'https://envisionpaths-36560900479.us-west1.run.app',
-    'http://localhost:3000',
-    'http://localhost:5173',
-  ].filter(Boolean) as string[];
-
+  
   app.use(cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (curl, Postman, server-to-server)
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        console.warn(`[CORS] Blocked origin: ${origin}`);
-        callback(new Error(`CORS: origin ${origin} not allowed`));
-      }
+      // Allow all origins in this environment
+      callback(null, true);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -225,8 +211,6 @@ async function startServer() {
 
 const PORT = 3000;
   console.log(`[SERVER] Using PORT=${PORT}`);
-  console.log(`[SERVER] APP_URL env = ${process.env.APP_URL || '(not set)'}`);
-  console.log(`[SERVER] Allowed CORS origins: ${allowedOrigins.join(', ')}`);
 
   // Ensure harrisonw707@gmail.com is an admin
   console.log('[SERVER] Ensuring admin user...');
@@ -243,10 +227,10 @@ const PORT = 3000;
     const testEmail = 'standard-test@envisionpaths.com';
     const testPassword = 'Password123!';
     const hashedPassword = bcryptjs.hashSync(testPassword, 10);
-
+    
     // Clean up old Google test user
-    db.prepare("DELETE FROM users WHERE email = 'google-test@envisionpaths.com' ").run();
-
+    db.prepare("DELETE FROM users WHERE email = 'google-test@envisionpaths.com'").run();
+    
     const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(testEmail);
     if (!existingUser) {
       db.prepare('INSERT INTO users (email, password, plan_type, is_admin) VALUES (?, ?, ?, ?)').run(testEmail, hashedPassword, 'pro', 0);
@@ -266,10 +250,10 @@ const PORT = 3000;
     const vertexEmail = 'premium-test@envisionpaths.com';
     const vertexPassword = 'VertexPassword123!';
     const hashedPassword = bcryptjs.hashSync(vertexPassword, 10);
-
+    
     // Clean up old Vertex AI user
     db.prepare("DELETE FROM users WHERE email = 'vertex-ai-user@envisionpaths.com'").run();
-
+    
     const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(vertexEmail);
     if (!existingUser) {
       db.prepare('INSERT INTO users (email, password, plan_type, is_admin) VALUES (?, ?, ?, ?)').run(vertexEmail, hashedPassword, 'elite', 0);
@@ -287,20 +271,20 @@ const PORT = 3000;
   // 1. Helper Functions (Defined at top of scope)
   const getSessionUser = (req: express.Request) => {
     const sessionId = req.cookies.session_id || req.headers['x-session-id'];
-
+    
     if (!sessionId) {
       return null;
     }
 
     // Handle case where header might be an array
     const sid = Array.isArray(sessionId) ? sessionId[0] : sessionId;
-
+    
     try {
       console.log(`[AUTH] Verifying session: ${sid}`);
-
+      
       // First check if session exists at all
       const sessionExists = db.prepare('SELECT user_id, expires_at FROM sessions WHERE id = ?').get(sid) as { user_id: number, expires_at: string } | undefined;
-
+      
       if (!sessionExists) {
         console.log(`[AUTH] Session ID not found in database: ${sid}`);
         return null;
@@ -308,19 +292,19 @@ const PORT = 3000;
 
       // Then check expiration using SQL for consistency
       const session = db.prepare(`
-        SELECT user_id
-        FROM sessions
+        SELECT user_id 
+        FROM sessions 
         WHERE id = ? AND expires_at > datetime('now')
       `).get(sid) as { user_id: number } | undefined;
-
+      
       if (!session) {
         console.log(`[AUTH] Session expired in DB: ${sid} (Expires at: ${sessionExists.expires_at}, Current DB time: ${db.prepare("SELECT datetime('now')").get()})`);
         return null;
       }
 
       const user = db.prepare(`
-        SELECT id, email, plan_type, plan_start_date, is_admin
-        FROM users
+        SELECT id, email, plan_type, plan_start_date, is_admin 
+        FROM users 
         WHERE id = ?
       `).get(session.user_id) as any;
 
@@ -343,18 +327,18 @@ const PORT = 3000;
       const duration = Date.now() - start;
       if (req.path.startsWith('/api')) {
         console.log(`[API] ${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
-
+        
         // Log user activity for specific actions
         const user = getSessionUser(req);
         const trackedActions = ['/api/auth/login', '/api/auth/signup', '/api/simulations/start', '/api/simulations/complete', '/api/create-checkout-session'];
-
+        
         if (user && (trackedActions.includes(req.path) || req.method !== 'GET')) {
           try {
             const country = (req.headers['x-appengine-country'] || req.headers['cf-ipcountry'] || req.headers['x-client-geo-country'] || 'Unknown') as string;
             const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Unknown') as string;
             const ua = req.headers['user-agent'] || 'Unknown';
             const activity = `${req.method} ${req.path}`;
-
+            
             db.prepare('INSERT INTO activity_logs (user_id, activity, country, ip_address, user_agent) VALUES (?, ?, ?, ?, ?)').run(
               user.id,
               activity,
@@ -366,7 +350,7 @@ const PORT = 3000;
             console.error('[LOGGING ERROR]', e);
           }
         }
-
+        
         if (res.statusCode === 403) {
           console.warn(`[403 WARNING] Request to ${req.path} returned 403. Headers: ${JSON.stringify(req.headers)}`);
         }
@@ -398,7 +382,7 @@ const PORT = 3000;
       const { email } = req.body;
       if (email === 'harrisonw707@gmail.com') {
         console.log('[API] Admin bypass triggered for harrisonw707@gmail.com');
-
+        
         // Find or create user
         let user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as any;
         if (!user) {
@@ -412,16 +396,16 @@ const PORT = 3000;
         const sessionId = 'admin_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
         console.log(`[API] Creating session: ${sessionId}`);
         db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
-
+        
         const fullUser = db.prepare('SELECT id, email, plan_type, is_admin FROM users WHERE id = ?').get(user.id) as any;
-
-        res.cookie('session_id', sessionId, {
-          httpOnly: true,
-          secure: true,
-          sameSite: 'none',
-          maxAge: 7 * 24 * 60 * 60 * 1000
+        
+        res.cookie('session_id', sessionId, { 
+          httpOnly: true, 
+          secure: true, 
+          sameSite: 'none', 
+          maxAge: 7 * 24 * 60 * 60 * 1000 
         });
-
+        
         console.log('[API] Admin login success');
         return res.json({ success: true, sessionId, user: fullUser });
       }
@@ -484,13 +468,89 @@ const PORT = 3000;
     }
   });
 
+  // Video Generation Proxy
+  app.post('/api/ai/generate-video', async (req, res) => {
+    const { model, payload } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({ error: "Gemini API Key is not configured." });
+    }
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateVideos`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey
+          },
+          body: JSON.stringify(payload)
+        }
+      );
+
+      const data = await response.json();
+      res.json(data);
+    } catch (err) {
+      console.error("Video generation failed:", err);
+      res.status(500).json({ error: "Video generation failed" });
+    }
+  });
+
+  app.get('/api/ai/operations/*', async (req, res) => {
+    const name = req.params[0];
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/${name}`,
+        {
+          method: "GET",
+          headers: {
+            "x-goog-api-key": apiKey!
+          }
+        }
+      );
+
+      const data = await response.json();
+      res.json(data);
+    } catch (err) {
+      console.error("Polling operation failed:", err);
+      res.status(500).json({ error: "Polling failed" });
+    }
+  });
+
+  app.get('/api/ai/video-proxy', async (req, res) => {
+    const { uri } = req.query;
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!uri) return res.status(400).json({ error: "URI required" });
+
+    try {
+      const response = await fetch(uri as string, {
+        method: "GET",
+        headers: {
+          "x-goog-api-key": apiKey!
+        }
+      });
+
+      const buffer = await response.arrayBuffer();
+      res.set('Content-Type', response.headers.get('Content-Type') || 'video/mp4');
+      res.send(Buffer.from(buffer));
+    } catch (err) {
+      console.error("Video proxy failed:", err);
+      res.status(500).json({ error: "Video proxy failed" });
+    }
+  });
+
   // Health check
   app.get('/api/health', (req, res) => {
     try {
       const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
-      res.json({
-        status: 'ok',
-        timestamp: new Date().toISOString(),
+      res.json({ 
+        status: 'ok', 
+        timestamp: new Date().toISOString(), 
         db: 'connected',
         stats: { users: userCount.count }
       });
@@ -534,7 +594,7 @@ const PORT = 3000;
           throw e;
         }
       }
-
+      
       const sessionId = Math.random().toString(36).substring(2);
       db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, userId);
       res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
@@ -553,7 +613,7 @@ const PORT = 3000;
       }
 
       const user = db.prepare('SELECT id, email, password, plan_type, is_admin, two_factor_enabled, two_factor_secret FROM users WHERE email = ?').get(email) as any;
-
+      
       if (user && user.password) {
         console.log(`[LOGIN] User found: ${email}, comparing password...`);
         const isMatch = await bcryptjs.compare(password, user.password);
@@ -562,9 +622,9 @@ const PORT = 3000;
           // Disable 2FA for admin access
           if (user.two_factor_enabled && !user.is_admin) {
             console.log(`[LOGIN] 2FA required for user: ${email}`);
-            return res.json({
-              success: true,
-              requires_2fa: true,
+            return res.json({ 
+              success: true, 
+              requires_2fa: true, 
               userId: user.id,
               method: user.two_factor_secret ? 'totp' : 'email'
             });
@@ -633,7 +693,7 @@ const PORT = 3000;
 
     const secret = speakeasy.generateSecret({ name: `EnvisionPaths (${user.email})` });
     const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url!);
-
+    
     db.prepare('UPDATE users SET two_factor_secret = ? WHERE id = ?').run(secret.base32, user.id);
     res.json({ qrCodeUrl, secret: secret.base32 });
   });
@@ -670,7 +730,7 @@ const PORT = 3000;
   app.post('/api/auth/forgot-password', (req, res) => {
     const { email } = req.body;
     const user = db.prepare('SELECT id, email FROM users WHERE email = ?').get(email) as { id: number, email: string } | undefined;
-
+    
     if (!user) {
       // For security, don't reveal if user exists
       return res.json({ success: true, message: 'If an account exists with that email, a reset code has been sent.' });
@@ -682,14 +742,14 @@ const PORT = 3000;
     db.prepare('UPDATE users SET email_verification_code = ?, email_verification_expiry = ? WHERE id = ?').run(code, expiry, user.id);
 
     console.log(`[AUTH] PASSWORD RESET CODE FOR ${user.email}: ${code}`);
-
+    
     res.json({ success: true, message: 'Reset code sent to your email.', userId: user.id });
   });
 
   app.post('/api/auth/verify-reset-code', (req, res) => {
     const { userId, code } = req.body;
     const user = db.prepare('SELECT id, email_verification_code, email_verification_expiry FROM users WHERE id = ?').get(userId) as { id: number, email_verification_code: string, email_verification_expiry: string } | undefined;
-
+    
     if (!user) return res.status(401).json({ error: 'Invalid request' });
 
     const now = new Date().toISOString();
@@ -703,7 +763,7 @@ const PORT = 3000;
   app.post('/api/auth/reset-password', async (req, res) => {
     const { userId, code, newPassword } = req.body;
     const user = db.prepare('SELECT id, email_verification_code, email_verification_expiry FROM users WHERE id = ?').get(userId) as { id: number, email_verification_code: string, email_verification_expiry: string } | undefined;
-
+    
     if (!user) return res.status(401).json({ error: 'Invalid request' });
 
     const now = new Date().toISOString();
@@ -719,7 +779,7 @@ const PORT = 3000;
   app.post('/api/auth/verify-email-code', (req, res) => {
     const { user_id, code } = req.body;
     const user = db.prepare('SELECT id, email, plan_type, email_verification_code, email_verification_expiry FROM users WHERE id = ?').get(user_id) as { id: number, email: string, plan_type: string, email_verification_code: string, email_verification_expiry: string } | undefined;
-
+    
     if (!user) return res.status(401).json({ error: 'Invalid request' });
 
     const now = new Date().toISOString();
@@ -764,7 +824,7 @@ const PORT = 3000;
     });
   }
 });
-
+  
   app.post('/api/admin/import-data', (req, res) => {
     const user = getSessionUser(req);
     if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
@@ -779,7 +839,7 @@ const PORT = 3000;
         if (users && Array.isArray(users)) {
           const checkUser = db.prepare('SELECT id FROM users WHERE email = ?');
           const insertUser = db.prepare('INSERT INTO users (email, plan_type, is_admin, created_at) VALUES (?, ?, ?, ?)');
-
+          
           for (const u of users) {
             const existing = checkUser.get(u.email) as { id: number } | undefined;
             if (existing) {
@@ -815,10 +875,10 @@ const PORT = 3000;
         if (activity_logs && Array.isArray(activity_logs)) {
           const insertLog = db.prepare('INSERT OR IGNORE INTO activity_logs (user_id, activity, country, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?)');
           const checkUser = db.prepare('SELECT id FROM users WHERE email = ?');
-
+          
           for (const l of activity_logs) {
             let newUserId = idMapping[l.user_id] || l.user_id;
-
+            
             // If no user_id mapping, try to find user by email
             if (!newUserId && l.email) {
               const existing = checkUser.get(l.email) as { id: number } | undefined;
@@ -854,6 +914,8 @@ const PORT = 3000;
     }
   });
 
+
+
   app.post('/api/auth/logout', (req, res) => {
     const sessionId = req.cookies.session_id || req.headers['x-session-id'];
     if (sessionId) db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
@@ -871,9 +933,9 @@ const PORT = 3000;
   app.get('/api/simulations/:id/messages', (req, res) => {
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
-
+    
     const simulationId = req.params.id;
-
+    
     // Verify ownership
     const simulation = db.prepare('SELECT user_id FROM simulations WHERE id = ?').get(simulationId) as { user_id: number } | undefined;
     if (!simulation || simulation.user_id !== user.id) {
@@ -932,25 +994,25 @@ const PORT = 3000;
   app.post('/api/simulations/report-glitch', (req, res) => {
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
-
+    
     const { simulation_id, reason } = req.body;
     if (!simulation_id) return res.status(400).json({ error: 'Simulation ID required' });
 
     try {
       // Check for abuse: How many glitches reported in the last 24 hours?
       const recentGlitches = db.prepare("SELECT COUNT(*) as count FROM glitch_reports WHERE user_id = ? AND created_at > datetime('now', '-1 day')").get(user.id) as { count: number };
-
+      
       if (recentGlitches.count >= 3) {
         return res.status(429).json({ error: 'You have reached the limit for glitch reports today. Please contact support if you continue to experience issues.' });
       }
 
       // Mark the simulation as glitched so it doesn't count
-      const result = db.prepare("UPDATE simulations SET status = 'glitched' WHERE id = ? AND user_id = ? AND status = 'started' ").run(simulation_id, user.id);
-
+      const result = db.prepare("UPDATE simulations SET status = 'glitched' WHERE id = ? AND user_id = ? AND status = 'started'").run(simulation_id, user.id);
+      
       if (result.changes > 0) {
         // Log the glitch report
-        db.prepare("INSERT INTO glitch_reports (user_id, simulation_id, reason) VALUES (?, ?, ?) ").run(user.id, simulation_id, reason || 'No reason provided');
-
+        db.prepare("INSERT INTO glitch_reports (user_id, simulation_id, reason) VALUES (?, ?, ?)").run(user.id, simulation_id, reason || 'No reason provided');
+        
         console.log(`[SIMULATION] Simulation ${simulation_id} marked as glitched by user ${user.id}`);
         res.json({ success: true, message: 'Glitch reported. This session has been refunded.' });
       } else {
@@ -965,10 +1027,10 @@ const PORT = 3000;
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
     const { simulation_id, job_title, industry, score, feedback, messages } = req.body;
-
+    
     if (simulation_id) {
       db.prepare("UPDATE simulations SET job_title = ?, industry = ?, score = ?, feedback = ?, status = 'completed' WHERE id = ? AND user_id = ?").run(job_title, industry, score, feedback, simulation_id, user.id);
-
+      
       // Save messages if provided
       if (messages && Array.isArray(messages)) {
         const insertMsg = db.prepare('INSERT INTO simulation_messages (simulation_id, role, content) VALUES (?, ?, ?)');
@@ -983,7 +1045,7 @@ const PORT = 3000;
       // Fallback for older clients
       const result = db.prepare("INSERT INTO simulations (user_id, job_title, industry, score, feedback, status) VALUES (?, ?, ?, ?, ?, 'completed')").run(user.id, job_title, industry, score, feedback);
       const newSimId = result.lastInsertRowid;
-
+      
       if (messages && Array.isArray(messages)) {
         const insertMsg = db.prepare('INSERT INTO simulation_messages (simulation_id, role, content) VALUES (?, ?, ?)');
         const transaction = db.transaction((msgs) => {
@@ -1006,17 +1068,32 @@ const PORT = 3000;
     const stripeClient = getStripe();
     if (!stripeClient) return res.status(500).json({ error: 'Stripe is not configured' });
 
-    const prices: Record<string, string> = {
-      beginner: 'price_beginner_id', // Replace with real price IDs
-      pro: 'price_pro_id'
+    const prices: Record<string, string | undefined> = {
+      beginner: process.env.STRIPE_PRICE_BEGINNER_ID,
+      pro: process.env.STRIPE_PRICE_PRO_ID
     };
 
+    const priceId = prices[plan_type];
     const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
 
     try {
-      const session = await stripeClient.checkout.sessions.create({
+      const sessionOptions: any = {
         payment_method_types: ['card'],
-        line_items: [
+        mode: 'payment',
+        success_url: `${appUrl}?session_id={CHECKOUT_SESSION_ID}&plan_type=${plan_type}`,
+        cancel_url: `${appUrl}/pricing`,
+        customer_email: user.email,
+        metadata: {
+          user_id: user.id.toString(),
+          plan_type
+        }
+      };
+
+      if (priceId) {
+        sessionOptions.line_items = [{ price: priceId, quantity: 1 }];
+      } else {
+        // Fallback for demo/development if price IDs are not set
+        sessionOptions.line_items = [
           {
             price_data: {
               currency: 'usd',
@@ -1027,16 +1104,10 @@ const PORT = 3000;
             },
             quantity: 1,
           },
-        ],
-        mode: 'payment',
-        success_url: `${appUrl}?session_id={CHECKOUT_SESSION_ID}&plan_type=${plan_type}`,
-        cancel_url: `${appUrl}/pricing`,
-        customer_email: user.email,
-        metadata: {
-          user_id: user.id.toString(),
-          plan_type
-        }
-      });
+        ];
+      }
+
+      const session = await stripeClient.checkout.sessions.create(sessionOptions);
 
       res.json({ url: session.url });
     } catch (e: any) {
@@ -1066,7 +1137,7 @@ const PORT = 3000;
       const session = await stripeClient.checkout.sessions.retrieve(session_id, {
         expand: ['line_items']
       });
-
+      
       // 3. Strict Verification: Must be paid, complete, and a valid checkout mode
       const isPaid = session.payment_status === 'paid';
       const isComplete = session.status === 'complete';
@@ -1074,14 +1145,22 @@ const PORT = 3000;
 
       if (isPaid && isComplete && isValidMode) {
         // 4. Authoritative Source: Strict Price ID Whitelisting (The Law)
-        const PRICE_MAP: Record<string, string> = {
-          'price_beginner_id': 'beginner',
-          'price_pro_id': 'pro'
-        };
+        const PRICE_MAP: Record<string, string> = {};
+        if (process.env.STRIPE_PRICE_BEGINNER_ID) PRICE_MAP[process.env.STRIPE_PRICE_BEGINNER_ID] = 'beginner';
+        if (process.env.STRIPE_PRICE_PRO_ID) PRICE_MAP[process.env.STRIPE_PRICE_PRO_ID] = 'pro';
 
         const lineItem = session.line_items?.data?.[0];
         const priceId = lineItem?.price?.id;
-        const plan_type = priceId ? PRICE_MAP[priceId] : undefined;
+        let plan_type = priceId ? PRICE_MAP[priceId] : undefined;
+
+        // Fallback for demo/development if using price_data (dynamic price IDs)
+        if (!plan_type && !process.env.STRIPE_PRICE_BEGINNER_ID && !process.env.STRIPE_PRICE_PRO_ID) {
+          const productName = lineItem?.price?.product as any;
+          // If product name matches or metadata matches, we can trust it for demo
+          if (session.metadata?.plan_type) {
+            plan_type = session.metadata.plan_type;
+          }
+        }
 
         if (!plan_type) {
           console.error(`[STRIPE ERROR] Unknown or missing Price ID (${priceId}) for session ${session_id}. Rejection mandatory.`);
@@ -1121,19 +1200,19 @@ const PORT = 3000;
         const upgradeTransaction = db.transaction(() => {
           // Update plan and associate customer ID if not already set (Persistence on first payment)
           db.prepare(`
-            UPDATE users
-            SET plan_type = ?,
+            UPDATE users 
+            SET plan_type = ?, 
                 plan_start_date = CURRENT_TIMESTAMP,
                 stripe_customer_id = COALESCE(stripe_customer_id, ?)
             WHERE id = ?
           `).run(plan_type, stripe_customer_id, user.id);
-
+          
           // Mark the session as "consumed"
           db.prepare('INSERT INTO processed_payments (session_id, user_id, plan_type) VALUES (?, ?, ?)').run(session_id, user.id, plan_type);
         });
 
         upgradeTransaction();
-
+        
         console.log(`[STRIPE] Plan ${plan_type} unlocked for user ${user.id} via session ${session_id}`);
         return res.json({ success: true, plan_type });
       }
@@ -1148,7 +1227,7 @@ const PORT = 3000;
   app.get("/api/reminders", (req, res) => {
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
-
+    
     const reminders = db.prepare("SELECT * FROM reminders WHERE user_id = ? ORDER BY scheduled_at ASC").all(user.id);
     res.json({ reminders });
   });
@@ -1156,30 +1235,30 @@ const PORT = 3000;
   app.post("/api/reminders", (req, res) => {
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
-
+    
     const { title, description, scheduled_at } = req.body;
     if (!title || !scheduled_at) return res.status(400).json({ error: 'Missing required fields' });
-
+    
     console.log(`[REMINDER] Creating reminder for user ${user.id}: ${title} at ${scheduled_at}`);
-
-    const result = db.prepare("INSERT INTO reminders (user_id, title, description, scheduled_at) VALUES (?, ?, ?, ?) ").run(user.id, title, description, scheduled_at);
+    
+    const result = db.prepare("INSERT INTO reminders (user_id, title, description, scheduled_at) VALUES (?, ?, ?, ?)").run(user.id, title, description, scheduled_at);
     res.json({ id: result.lastInsertRowid });
   });
 
   app.patch("/api/reminders/:id", (req, res) => {
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
-
+    
     const { completed } = req.body;
-    db.prepare("UPDATE reminders SET completed = ? WHERE id = ? AND user_id = ? ").run(completed ? 1 : 0, req.params.id, user.id);
+    db.prepare("UPDATE reminders SET completed = ? WHERE id = ? AND user_id = ?").run(completed ? 1 : 0, req.params.id, user.id);
     res.json({ success: true });
   });
 
   app.delete("/api/reminders/:id", (req, res) => {
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
-
-    db.prepare("DELETE FROM reminders WHERE id = ? AND user_id = ? ").run(req.params.id, user.id);
+    
+    db.prepare("DELETE FROM reminders WHERE id = ? AND user_id = ?").run(req.params.id, user.id);
     res.json({ success: true });
   });
 
@@ -1187,16 +1266,16 @@ const PORT = 3000;
   app.delete("/api/user/account", (req, res) => {
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
-
+    
     try {
       const deleteTransaction = db.transaction(() => {
-        db.prepare("DELETE FROM reminders WHERE user_id = ? ").run(user.id);
-        db.prepare("DELETE FROM simulations WHERE user_id = ? ").run(user.id);
-        db.prepare("DELETE FROM sessions WHERE user_id = ? ").run(user.id);
-        db.prepare("DELETE FROM processed_payments WHERE user_id = ? ").run(user.id);
-        db.prepare("DELETE FROM users WHERE id = ? ").run(user.id);
+        db.prepare("DELETE FROM reminders WHERE user_id = ?").run(user.id);
+        db.prepare("DELETE FROM simulations WHERE user_id = ?").run(user.id);
+        db.prepare("DELETE FROM sessions WHERE user_id = ?").run(user.id);
+        db.prepare("DELETE FROM processed_payments WHERE user_id = ?").run(user.id);
+        db.prepare("DELETE FROM users WHERE id = ?").run(user.id);
       });
-
+      
       deleteTransaction();
       res.clearCookie('session_id');
       res.json({ success: true });
@@ -1238,7 +1317,7 @@ const PORT = 3000;
     try {
       // Fetch full user to get password
       const fullUser = db.prepare('SELECT password FROM users WHERE id = ?').get(user.id) as any;
-
+      
       if (!fullUser.password) {
         // Handle users without passwords (e.g. admin bypass)
         const hashedPassword = await bcryptjs.hash(newPassword, 10);
@@ -1274,7 +1353,7 @@ const PORT = 3000;
     if (req.path.startsWith('/api')) return next();
     vite.middlewares.handle(req, res, next);
   });
-  
+
   app.get('(.*)', async (req, res, next) => {
     if (req.url.startsWith('/api')) return next();
     try {
@@ -1297,8 +1376,8 @@ const PORT = 3000;
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('[GLOBAL ERROR]', err);
     if (res.headersSent) return next(err);
-    res.status(err.status || 500).json({
-      error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message
+    res.status(err.status || 500).json({ 
+      error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message 
     });
   });
 
