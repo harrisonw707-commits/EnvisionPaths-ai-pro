@@ -223,28 +223,9 @@ export default function App() {
   const [isTesterGuideOpen, setIsTesterGuideOpen] = useState(false);
   const [lastUpdated] = useState('2026-03-16 16:52 UTC');
 
-  // Debug check for API key
-  useEffect(() => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    console.log("[Debug] AI Configuration:", {
-      hasKey: !!apiKey,
-      keyLength: apiKey?.length || 0,
-      keyPrefix: apiKey ? `${apiKey.substring(0, 4)}...` : 'none',
-      env: process.env.NODE_ENV
-    });
-  }, []);
   const [lastChecked, setLastChecked] = useState(new Date().toLocaleString());
   const [authError, setAuthError] = useState<string | null>(null);
   const [showRetry, setShowRetry] = useState(false);
-
-  useEffect(() => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === 'dummy-key') {
-      console.warn('[SYSTEM] Gemini API Key is missing or invalid.');
-    } else {
-      console.log('[SYSTEM] Gemini API Key detected and loaded.');
-    }
-  }, []);
 
   useEffect(() => {
     let timer: any;
