@@ -499,7 +499,7 @@ const PORT = 3000;
   });
 
   app.get('/api/ai/operations/*', async (req, res) => {
-    const name = req.params[0];
+    const name = (req.params as any)[0];
     const apiKey = process.env.GEMINI_API_KEY;
 
     try {
