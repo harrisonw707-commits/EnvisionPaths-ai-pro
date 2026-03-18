@@ -6,6 +6,3 @@ coverage/
 *.log
 .env*
 !.env.example
-envision.db
-envision.db-wal
-envision.db-shm
