@@ -2,25 +2,36 @@ steps:
   # Build the container image
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', 'gcr.io/$PROJECT_ID/envision-paths', '.']
-  
+
   # Push the container image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/envision-paths']
-  
+
   # Deploy container image to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - 'run'
       - 'deploy'
-      - 'envision-paths'
+      # Service name must match the live Cloud Run service (visible in the run.app URL)
+      - 'envisionpaths-ai-pro'
       - '--image'
       - 'gcr.io/$PROJECT_ID/envision-paths'
+      # Region must match where the live service is deployed
       - '--region'
-      - 'us-central1'
+      - 'us-west1'
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
+      # Pull secrets from Google Secret Manager on every deploy so they are never wiped.
+      # Each entry maps: ENV_VAR_NAME=SECRET_MANAGER_SECRET_NAME:version
+      - '--update-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest'
+      - '--update-secrets=STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest'
+      - '--update-secrets=STRIPE_PRICE_BEGINNER_ID=STRIPE_PRICE_BEGINNER_ID:latest'
+      - '--update-secrets=STRIPE_PRICE_PRO_ID=STRIPE_PRICE_PRO_ID:latest'
+      # Non-secret env vars — set the public app URL to the correct Cloud Run endpoint.
+      # Update this URL if the Cloud Run service is ever recreated with a new generated ID.
+      - '--update-env-vars=APP_URL=https://envisionpaths-ai-pro-36560900479.us-west1.run.app'
 
 images:
   - 'gcr.io/$PROJECT_ID/envision-paths'
