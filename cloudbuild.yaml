@@ -7,7 +7,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/envisionpaths-ai-pro']
 
-  # Deploy container image to Cloud Run
+  # Deploy container image to Cloud Run (preserves existing env vars with --update-env-vars fallback)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -21,6 +21,8 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
+      - '--update-env-vars'
+      - 'NODE_ENV=production'
 
 images:
   - 'gcr.io/$PROJECT_ID/envisionpaths-ai-pro'
