@@ -24,3 +24,6 @@ steps:
 
 images:
   - 'gcr.io/$PROJECT_ID/envision-paths'
+
+options:
+  default_logs_bucket_behavior: REGIONAL_USER_OWNED_BUCKET
