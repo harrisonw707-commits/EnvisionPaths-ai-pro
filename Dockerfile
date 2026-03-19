@@ -1,21 +1,21 @@
 # Stage 1: Build the frontend
-FROM node:20-alpine AS build
+FROM node:18-alpine AS build
 RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --include=optional
+RUN npm ci
 COPY . .
 RUN npm run build
 
 # Stage 2: Install production dependencies (including native modules)
-FROM node:20-alpine AS deps
+FROM node:18-alpine AS deps
 RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --omit=dev --include=optional
+RUN npm ci --omit=dev
 
 # Stage 3: Final runtime image
-FROM node:20-alpine AS run
+FROM node:18-alpine AS run
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080

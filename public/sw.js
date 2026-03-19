@@ -1,4 +1,4 @@
-const CACHE_NAME = 'envisionpaths-v5'; // Increment version to force update
+const CACHE_NAME = 'envisionpaths-v4'; // Increment version to force update
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -19,19 +19,10 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   // CRITICAL: Bypass cache for API requests and AI requests
   // Ensure Google API calls are passed through directly if they happen
-  let requestHostname = '';
-  try {
-    requestHostname = new URL(event.request.url).hostname;
-  } catch (_) {}
-
   if (
-    event.request.url.includes('/api/') ||
-    event.request.url.includes('cloudusersettings') ||
-    requestHostname === 'accounts.google.com' ||
-    requestHostname.endsWith('.googleapis.com') ||
-    requestHostname === 'googleapis.com' ||
-    requestHostname.endsWith('.gstatic.com') ||
-    requestHostname === 'gstatic.com'
+    event.request.url.includes('/api/') || 
+    event.request.url.includes('generativelanguage.googleapis.com') ||
+    event.request.url.includes('googleapis.com')
   ) {
     return; // Pass through to network
   }
