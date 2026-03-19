@@ -460,6 +460,11 @@ const PORT = 3000;
       );
 
       const data = await response.json();
+      if (!response.ok) {
+        console.error(`[Gemini] Error response from API (${response.status}):`, JSON.stringify(data));
+      } else if (!data.candidates || data.candidates.length === 0) {
+        console.warn("[Gemini] Empty candidates in response:", JSON.stringify(data));
+      }
       res.json(data);
 
     } catch (err) {
