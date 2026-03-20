@@ -2,20 +2,21 @@
 
 @theme {
   --color-theme-main: #0b0b0b;
+  --color-theme-bg: #0b0b0b;
   --color-theme-surface: #111111;
   --color-theme-surface-hover: #1a1a1a;
   --color-theme-input: #1a1a1a;
   --color-theme-input-hover: #222222;
   --color-theme-primary: #f5f5f5;
   --color-theme-secondary: #6b7280;
-  --color-theme-accent: #dc2626;
-  --color-theme-border: rgba(255, 255, 255, 0.1);
+  --color-theme-accent: #ef4444;
+  --color-theme-border: #1a1a1a;
 }
 
 :root {
   --bg: #0b0b0b;
   --ink: #f5f5f5;
-  --accent: #dc2626;
+  --accent: #ef4444;
 }
 
 .theme-light {

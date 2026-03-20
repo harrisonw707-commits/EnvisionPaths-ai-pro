@@ -1,7 +1,6 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer as createViteServer } from 'vite';
 import Database from 'better-sqlite3';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
@@ -209,7 +208,7 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 8080;
   console.log(`[SERVER] Using PORT=${PORT}`);
 
   // Ensure harrisonw707@gmail.com is an admin
@@ -1349,10 +1348,11 @@ const PORT = 3000;
   });
 
   if (process.env.NODE_ENV !== 'production') {
-  const vite = await createViteServer({
-    server: { middlewareMode: true },
-    appType: 'spa',
-  });
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
 
   app.use((req, res, next) => {
     if (req.path.startsWith('/api')) return next();
