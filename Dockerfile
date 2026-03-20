@@ -23,10 +23,12 @@ RUN apk add --no-cache libc6-compat
 
 # Copy production dependencies
 COPY --from=deps /app/node_modules ./node_modules
-# Copy source files for tsx
-COPY . .
 # Copy built assets
 COPY --from=build /app/dist ./dist
+# Copy compiled server
+COPY --from=build /app/server.js ./server.js
+# Copy package.json for npm start
+COPY package.json ./
 
 EXPOSE 8080
 CMD ["npm", "start"]
