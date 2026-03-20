@@ -46,7 +46,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ content, children, position = 
             exit={{ opacity: 0, scale: 0.9 }}
             className={`absolute z-50 pointer-events-none ${positionClasses[position]}`}
           >
-            <div className="bg-red-600 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded shadow-xl whitespace-nowrap border border-red-500/30">
+            <div className="bg-red-600 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded shadow-xl whitespace-nowrap border border-white/20">
               {content}
               <div className={`absolute border-4 border-transparent ${arrowClasses[position]}`} />
             </div>
