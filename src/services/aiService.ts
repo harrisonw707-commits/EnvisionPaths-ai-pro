@@ -5,15 +5,21 @@ export interface AIResponse {
   text: string;
 }
 
-const API_KEY_FALLBACK = typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '';
+const API_KEY_FALLBACK = 
+  (typeof globalThis !== 'undefined' && (globalThis as any).API_KEY) ||
+  (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || 
+  '';
 
 /**
  * Helper to get the current API key.
- * Prioritizes the platform-selected API_KEY for advanced models.
+ * Prioritizes the AI Studio runtime-injected key (globalThis.API_KEY),
+ * then falls back to build-time env vars.
  */
 function getApiKey() {
   try {
-    return (typeof process !== 'undefined' && process.env?.API_KEY) || 
+    // AI Studio injects the selected key into globalThis.API_KEY at runtime
+    return (typeof globalThis !== 'undefined' && (globalThis as any).API_KEY) ||
+           (typeof process !== 'undefined' && process.env?.API_KEY) || 
            (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) || 
            '';
   } catch (e) {
