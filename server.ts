@@ -57,6 +57,11 @@ console.error = (...args: any[]) => {
   originalError.apply(console, args);
 };
 
+// Gemini API key helper – reads GEMINI_API_KEY, falls back to VITE_GEMINI_API_KEY
+function getGeminiApiKey(): string | undefined {
+  return process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+}
+
 // Lazy Stripe initialization
 let stripe: Stripe | null = null;
 function getStripe() {
@@ -438,7 +443,7 @@ const PORT = Number(process.env.PORT) || 8080;
   // Gemini API Proxy
   app.post('/api/ai/generate', async (req, res) => {
     const { model, payload } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = getGeminiApiKey();
 
     if (!apiKey) {
       return res.status(500).json({
@@ -468,7 +473,7 @@ const PORT = Number(process.env.PORT) || 8080;
   // Generic Generate Endpoint (as requested by user)
   app.post('/api/generate', async (req, res) => {
     const { model = 'gemini-3-flash-preview', ...payload } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = getGeminiApiKey();
 
     if (!apiKey) {
       return res.status(500).json({ error: "Gemini API Key is not configured on the server." });
@@ -490,7 +495,7 @@ const PORT = Number(process.env.PORT) || 8080;
   // Video Generation Proxy
   app.post('/api/ai/generate-video', async (req, res) => {
     const { model, payload } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = getGeminiApiKey();
 
     if (!apiKey) {
       return res.status(500).json({ error: "Gemini API Key is not configured." });
@@ -514,7 +519,7 @@ const PORT = Number(process.env.PORT) || 8080;
 
   app.get('/api/ai/operations/*', async (req, res) => {
     const name = (req.params as any)[0];
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = getGeminiApiKey();
 
     if (!apiKey) {
       return res.status(500).json({ error: "Gemini API Key is not configured." });
@@ -535,7 +540,7 @@ const PORT = Number(process.env.PORT) || 8080;
 
   app.get('/api/ai/video-proxy', async (req, res) => {
     const { uri } = req.query;
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = getGeminiApiKey();
 
     if (!uri) return res.status(400).json({ error: "URI required" });
 
@@ -573,7 +578,7 @@ const PORT = Number(process.env.PORT) || 8080;
 
   app.get("/api/debug/env", (req, res) => {
     res.json({
-      gemini: process.env.GEMINI_API_KEY ? "loaded" : "missing"
+      gemini: getGeminiApiKey() ? "loaded" : "missing"
     });
   });
 
