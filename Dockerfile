@@ -1,32 +1,17 @@
-# Stage 1: Build the frontend
-FROM node:18-alpine AS build
-RUN apk add --no-cache python3 make g++
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-# Stage 2: Install production dependencies (including native modules)
-FROM node:18-alpine AS deps
-RUN apk add --no-cache python3 make g++
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --omit=dev
-
-# Stage 3: Final runtime image
-FROM node:18-alpine AS run
+# Runtime image — production deps and pre-built artifacts from Cloud Build workspace
+FROM node:20-slim
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
-RUN apk add --no-cache libc6-compat
 
-# Copy production dependencies
-COPY --from=deps /app/node_modules ./node_modules
-# Copy source files for tsx
-COPY . .
-# Copy built assets
-COPY --from=build /app/dist ./dist
+# Install only production dependencies (recompiles native addons like better-sqlite3 for this image)
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+# Copy pre-built frontend assets and server bundle from Cloud Build workspace
+COPY dist/ ./dist/
+COPY server.js ./server.js
 
 EXPOSE 8080
-CMD ["npm", "start"]
+CMD ["node", "server.js"]
