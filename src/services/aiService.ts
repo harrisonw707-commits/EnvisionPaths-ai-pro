@@ -1,44 +1,6 @@
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold, Modality, GenerateContentResponse } from "@google/genai";
-
-// AI Service using @google/genai SDK directly in the frontend
+// AI Service calling the backend proxy instead of Gemini directly
 export interface AIResponse {
   text: string;
-}
-
-const API_KEY_FALLBACK = typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '';
-
-/**
- * Helper to get the current API key.
- * Prioritizes the platform-selected API_KEY for advanced models.
- */
-function getApiKey() {
-  try {
-    // Priority 1: Dynamic key from platform selection dialog (runtime)
-    // We check window.process directly to avoid Vite's define replacement
-    const runtimeKey = (typeof window !== 'undefined') ? 
-      ((window as any).process?.env?.API_KEY || (window as any).process?.env?.GEMINI_API_KEY) : 
-      undefined;
-    
-    if (runtimeKey) return runtimeKey;
-
-    // Priority 2: Build-time or environment key
-    return process.env.GEMINI_API_KEY || '';
-  } catch (e) {
-    return '';
-  }
-}
-
-/**
- * Helper to get a fresh AI instance.
- * Guidelines recommend creating a new instance right before making an API call
- * to ensure it uses the most up-to-date key from the selection dialog.
- */
-function getAI() {
-  const apiKey = getApiKey();
-  if (!apiKey || apiKey === 'undefined' || apiKey === 'null' || apiKey.length < 10) {
-    throw new Error("Gemini API Key is missing or failed to load from secrets. Please check the 'Secrets' menu in AI Studio and ensure your GEMINI_API_KEY is correctly set.");
-  }
-  return new GoogleGenAI({ apiKey });
 }
 
 /**
@@ -74,18 +36,7 @@ async function withRetry<T>(
 }
 
 /**
- * Default safety settings for all AI requests
- */
-const DEFAULT_SAFETY_SETTINGS = [
-  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-  { category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY, threshold: HarmBlockThreshold.BLOCK_NONE }
-];
-
-/**
- * Generates content using the Gemini model via the @google/genai SDK.
+ * Generates content using the backend proxy.
  */
 export async function generateContent(
   prompt: string, 
@@ -94,27 +45,37 @@ export async function generateContent(
 ): Promise<AIResponse> {
   try {
     return await withRetry(async () => {
-      const ai = getAI();
       const modelName = "gemini-3-flash-preview";
-      console.log(`[AI] Generating content with ${modelName}`);
+      console.log(`[AI] Generating content via backend with ${modelName}`);
       
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: modelName,
-        contents: [
-          ...history,
-          { role: "user", parts: [{ text: prompt }] }
-        ],
-        config: {
-          systemInstruction: systemInstruction,
-          safetySettings: DEFAULT_SAFETY_SETTINGS,
-          temperature: 0.7,
-        }
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelName,
+          payload: {
+            contents: [
+              ...history,
+              { role: "user", parts: [{ text: prompt }] }
+            ],
+            generationConfig: {
+              temperature: 0.7,
+            },
+            systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined
+          }
+        })
       });
 
-      const text = response.text;
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Backend returned ${response.status}`);
+      }
+
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
       
       if (text === undefined) {
-        const finishReason = response.candidates?.[0]?.finishReason;
+        const finishReason = data.candidates?.[0]?.finishReason;
         if (finishReason === 'SAFETY') {
           return { text: "I apologize, but I cannot respond to that request as it triggers my safety filters. Let's try a different interview topic." };
         }
@@ -142,7 +103,8 @@ export async function generateContent(
 }
 
 /**
- * Streams content using the Gemini model via the @google/genai SDK.
+ * Streams content using the backend proxy.
+ * Note: Real streaming through proxy is complex, so we fallback to non-streaming for now.
  */
 export async function streamContent(
   prompt: string,
@@ -151,29 +113,8 @@ export async function streamContent(
   history: any[] = []
 ): Promise<void> {
   try {
-    const ai = getAI();
-    const modelName = "gemini-3-flash-preview";
-    console.log(`[AI] Streaming content with ${modelName}`);
-    
-    const response = await ai.models.generateContentStream({
-      model: modelName,
-      contents: [
-        ...history,
-        { role: "user", parts: [{ text: prompt }] }
-      ],
-      config: {
-        systemInstruction: systemInstruction,
-        safetySettings: DEFAULT_SAFETY_SETTINGS,
-        temperature: 0.7,
-      }
-    });
-
-    for await (const chunk of response) {
-      const text = chunk.text;
-      if (text) {
-        onChunk(text);
-      }
-    }
+    const result = await generateContent(prompt, systemInstruction, history);
+    onChunk(result.text);
   } catch (error: any) {
     console.error("[AI] Streaming Error:", error);
     const errorMsg = error.message?.toLowerCase() || "";
@@ -186,132 +127,132 @@ export async function streamContent(
 }
 
 /**
- * Generates speech from text using Gemini TTS via the @google/genai SDK.
+ * Generates speech from text using backend proxy.
  */
 export async function generateSpeech(text: string): Promise<string | null> {
   try {
     return await withRetry(async () => {
-      const ai = getAI();
       const modelName = "gemini-2.5-flash-preview-tts";
-      console.log(`[TTS] Generating speech with ${modelName}`);
+      console.log(`[TTS] Generating speech via backend with ${modelName}`);
       
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: [{ parts: [{ text: `Say in a professional, clear, and encouraging tone: ${text}` }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Zephyr' },
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelName,
+          payload: {
+            contents: [{ parts: [{ text: `Say in a professional, clear, and encouraging tone: ${text}` }] }],
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName: 'Zephyr' },
+                },
+              },
             },
-          },
-        },
+          }
+        })
       });
 
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (!response.ok) return null;
+      const data = await response.json();
+      const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       return base64Audio || null;
     }, 2, 1000);
-  } catch (error: any) {
-    if (error.message?.includes("Requested entity was not found")) {
-      console.error("[TTS] API Key error. Please re-select your API key.");
-      if (typeof window !== 'undefined' && (window as any).aistudio) {
-        (window as any).aistudio.openSelectKey();
-      }
-    }
+  } catch (error) {
     console.error("[TTS] Gemini TTS Error:", error);
     return null;
   }
 }
 
 /**
- * Generates an image using Gemini via the @google/genai SDK.
+ * Generates an image using backend proxy.
  */
 export async function generateImage(prompt: string): Promise<string | null> {
   try {
     return await withRetry(async () => {
-      const ai = getAI();
       const modelName = "gemini-3.1-flash-image-preview";
-      console.log(`[Image] Generating image with ${modelName}`);
+      console.log(`[Image] Generating image via backend with ${modelName}`);
       
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: {
-          parts: [{ text: prompt }]
-        },
-        config: {
-          imageConfig: {
-            aspectRatio: "1:1",
-            imageSize: "1K"
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelName,
+          payload: {
+            contents: {
+              parts: [{ text: prompt }]
+            },
+            generationConfig: {
+              imageConfig: {
+                aspectRatio: "1:1",
+                imageSize: "1K"
+              }
+            }
           }
-        }
+        })
       });
 
-      for (const part of response.candidates?.[0]?.content?.parts || []) {
+      if (!response.ok) return null;
+      const data = await response.json();
+      for (const part of data.candidates?.[0]?.content?.parts || []) {
         if (part.inlineData) {
           return `data:image/png;base64,${part.inlineData.data}`;
         }
       }
       return null;
     }, 2, 2000);
-  } catch (error: any) {
-    if (error.message?.includes("Requested entity was not found")) {
-      console.error("[Image] API Key error. Please re-select your API key.");
-      if (typeof window !== 'undefined' && (window as any).aistudio) {
-        (window as any).aistudio.openSelectKey();
-      }
-    }
+  } catch (error) {
     console.error("[Image] Gemini Image Error:", error);
     return null;
   }
 }
 
 /**
- * Generates a video using Veo via the @google/genai SDK.
+ * Generates a video using backend proxy.
  */
 export async function generateVideo(prompt: string): Promise<string | null> {
   try {
     return await withRetry(async () => {
-      const ai = getAI();
       const modelName = "veo-3.1-fast-generate-preview";
-      console.log(`[Video] Generating video with ${modelName}`);
+      console.log(`[Video] Generating video via backend with ${modelName}`);
       
-      let operation = await ai.models.generateVideos({
-        model: modelName,
-        prompt,
-        config: {
-          numberOfVideos: 1,
-          resolution: '720p',
-          aspectRatio: '1:1'
-        }
+      const response = await fetch('/api/ai/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelName,
+          payload: {
+            prompt,
+            config: {
+              numberOfVideos: 1,
+              resolution: '720p',
+              aspectRatio: '1:1'
+            }
+          }
+        })
       });
+
+      if (!response.ok) return null;
+      let operation = await response.json();
 
       let retries = 30; // 5 minutes max
       while (!operation.done && retries > 0) {
         await new Promise(resolve => setTimeout(resolve, 10000));
-        operation = await ai.operations.getVideosOperation({ operation: operation });
+        const opRes = await fetch(`/api/ai/operations/${operation.name}`);
+        operation = await opRes.json();
         retries--;
       }
 
       if (operation.done && operation.response?.generatedVideos?.[0]?.video?.uri) {
         const videoUri = operation.response.generatedVideos[0].video.uri;
-        const videoRes = await fetch(videoUri, {
-          method: 'GET',
-          headers: {
-            'x-goog-api-key': getApiKey(),
-          },
-        });
-        const blob = await videoRes.blob();
+        const videoProxyRes = await fetch(`/api/ai/video-proxy?uri=${encodeURIComponent(videoUri)}`);
+        const blob = await videoProxyRes.blob();
         return URL.createObjectURL(blob);
       }
       return null;
-    }, 1, 1000); // Only 1 retry for video as it's expensive and slow
-  } catch (error: any) {
-    if (error.message?.includes("Requested entity was not found")) {
-      console.error("[Video] API Key error. Please re-select your API key.");
-      if (typeof window !== 'undefined' && (window as any).aistudio) {
-        (window as any).aistudio.openSelectKey();
-      }
-    }
+    }, 1, 1000);
+  } catch (error) {
     console.error("[Video] Gemini Video Error:", error);
     return null;
   }

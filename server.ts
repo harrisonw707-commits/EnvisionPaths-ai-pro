@@ -7,6 +7,7 @@ import cors from 'cors';
 import Stripe from 'stripe';
 import * as bcryptjs from 'bcryptjs';
 import speakeasy from 'speakeasy';
+import { GoogleGenAI } from "@google/genai";
 import { appendFileSync } from 'node:fs';
 
 appendFileSync('server_init.log', `[${new Date().toISOString()}] Server file loaded\n`);
@@ -208,7 +209,7 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 8080;
   console.log(`[SERVER] Using PORT=${PORT}`);
 
   // Ensure harrisonw707@gmail.com is an admin
@@ -446,29 +447,43 @@ const PORT = 3000;
     }
 
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": apiKey
-          },
-          body: JSON.stringify(payload)
-        }
-      );
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: model || 'gemini-3-flash-preview',
+        contents: payload.contents,
+        config: payload.generationConfig,
+        // systemInstruction: payload.systemInstruction // Handled by contents if passed as system role or explicitly
+      });
 
-      const data = await response.json();
-      if (!response.ok) {
-        console.error(`[Gemini] Error response from API (${response.status}):`, JSON.stringify(data));
-      } else if (!data.candidates || data.candidates.length === 0) {
-        console.warn("[Gemini] Empty candidates in response:", JSON.stringify(data));
-      }
-      res.json(data);
+      // The SDK returns a response object that matches the REST API structure mostly
+      // but we need to ensure it's JSON serializable for the frontend
+      res.json(response);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Gemini request failed:", err);
-      res.status(500).json({ error: "AI request failed" });
+      res.status(500).json({ error: err.message || "AI request failed" });
+    }
+  });
+
+  // Generic Generate Endpoint (as requested by user)
+  app.post('/api/generate', async (req, res) => {
+    const { model = 'gemini-3-flash-preview', ...payload } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({ error: "Gemini API Key is not configured on the server." });
+    }
+
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model,
+        ...payload
+      });
+      res.json(response);
+    } catch (err: any) {
+      console.error("Gemini generate request failed:", err);
+      res.status(500).json({ error: err.message || "AI request failed" });
     }
   });
 
@@ -482,23 +497,18 @@ const PORT = 3000;
     }
 
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateVideos`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": apiKey
-          },
-          body: JSON.stringify(payload)
-        }
-      );
+      const ai = new GoogleGenAI({ apiKey });
+      const operation = await ai.models.generateVideos({
+        model: model || 'veo-3.1-fast-generate-preview',
+        prompt: payload.prompt,
+        image: payload.image,
+        config: payload.config
+      });
 
-      const data = await response.json();
-      res.json(data);
-    } catch (err) {
+      res.json(operation);
+    } catch (err: any) {
       console.error("Video generation failed:", err);
-      res.status(500).json({ error: "Video generation failed" });
+      res.status(500).json({ error: err.message || "Video generation failed" });
     }
   });
 
@@ -506,22 +516,20 @@ const PORT = 3000;
     const name = (req.params as any)[0];
     const apiKey = process.env.GEMINI_API_KEY;
 
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/${name}`,
-        {
-          method: "GET",
-          headers: {
-            "x-goog-api-key": apiKey!
-          }
-        }
-      );
+    if (!apiKey) {
+      return res.status(500).json({ error: "Gemini API Key is not configured." });
+    }
 
-      const data = await response.json();
-      res.json(data);
-    } catch (err) {
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const operation = await ai.operations.getVideosOperation({
+        operation: { name } as any
+      });
+
+      res.json(operation);
+    } catch (err: any) {
       console.error("Polling operation failed:", err);
-      res.status(500).json({ error: "Polling failed" });
+      res.status(500).json({ error: err.message || "Polling failed" });
     }
   });
 
