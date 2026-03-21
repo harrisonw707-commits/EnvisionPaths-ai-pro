@@ -1,52 +1,26 @@
-substitutions:
-  _GEMINI_API_KEY: ''
-
 steps:
-  # Install all dependencies (including devDependencies needed for build)
-  - name: 'node:20-slim'
-    entrypoint: bash
-    args:
-      - '-c'
-      - 'apt-get update && apt-get install -y python3 make g++ && npm ci'
-
-  # Build the frontend (vite build) and server bundle (esbuild)
-  - name: 'node:20-slim'
-    entrypoint: npm
-    args: ['run', 'build']
-
-  # Verify required build artifacts exist before building the container
-  - name: 'node:20-slim'
-    entrypoint: bash
-    args:
-      - '-c'
-      - 'test -d dist && test -f server.js || (echo "Build artifacts missing: dist/ or server.js not found" && exit 1)'
-
-  # Build the container image using the Dockerfile
+  # Build the container image
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/envisionpaths-ai-pro', '.']
-
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/envision-paths', '.']
+  
   # Push the container image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/envisionpaths-ai-pro']
-
+    args: ['push', 'gcr.io/$PROJECT_ID/envision-paths']
+  
   # Deploy container image to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - 'run'
       - 'deploy'
-      - 'envisionpaths-ai-pro'
+      - 'envision-paths'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/envisionpaths-ai-pro'
+      - 'gcr.io/$PROJECT_ID/envision-paths'
       - '--region'
-      - 'us-west1'
+      - 'us-central1'
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
-      - '--set-env-vars'
-      - 'GEMINI_API_KEY=$_GEMINI_API_KEY'
-      # NOTE: For production, consider using --set-secrets instead of --set-env-vars
-      # to manage GEMINI_API_KEY via Google Secret Manager for better security.
 
 images:
-  - 'gcr.io/$PROJECT_ID/envisionpaths-ai-pro'
+  - 'gcr.io/$PROJECT_ID/envision-paths'
