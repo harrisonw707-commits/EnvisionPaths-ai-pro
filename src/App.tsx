@@ -191,7 +191,7 @@ export default function App() {
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
 
-  // Check for API key selection on mount
+  // Check for API key selection on mount and re-check on focus/visibility change
   useEffect(() => {
     const checkApiKey = async () => {
       if (typeof window !== 'undefined' && (window as any).aistudio) {
@@ -207,7 +207,22 @@ export default function App() {
         setHasApiKey(true); 
       }
     };
+
     checkApiKey();
+
+    if (typeof window === 'undefined') return;
+
+    // Re-check when user returns to the tab (e.g. after selecting key in AI Studio dialog)
+    window.addEventListener('focus', checkApiKey);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') checkApiKey();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', checkApiKey);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const handleOpenKeySelection = async () => {
