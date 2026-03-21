@@ -1,12 +1,42 @@
-// AI Service using backend proxy
+// AI Service calling the backend proxy instead of Gemini directly
 export interface AIResponse {
   text: string;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+/**
+ * Generic retry helper with exponential backoff
+ */
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  initialDelay: number = 1000,
+  onRetry?: (error: any, attempt: number) => void
+): Promise<T> {
+  let lastError: any;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      lastError = error;
+      const errorMsg = error.message?.toLowerCase() || "";
+      
+      // Don't retry if it's a safety block or quota error (429)
+      if (errorMsg.includes('safety') || errorMsg.includes('blocked') || errorMsg.includes('429') || errorMsg.includes('quota')) {
+        throw error;
+      }
+
+      if (attempt < maxRetries - 1) {
+        const delay = initialDelay * Math.pow(2, attempt);
+        if (onRetry) onRetry(error, attempt + 1);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  throw lastError;
+}
 
 /**
- * Generates content using the Gemini model via the backend proxy.
+ * Generates content using the backend proxy.
  */
 export async function generateContent(
   prompt: string, 
@@ -20,77 +50,68 @@ export async function generateContent(
     try {
       const modelName = "gemini-2.0-flash";
       console.log(`[AI] Attempting generation via proxy with ${modelName} (Retries: ${retries - 1})`);
+  try {
+    return await withRetry(async () => {
+      const modelName = "gemini-3-flash-preview";
+      console.log(`[AI] Generating content via backend with ${modelName}`);
       
-      const payload = {
-        contents: [
-          ...history,
-          { role: "user", parts: [{ text: prompt }] }
-        ],
-        systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
-        safetySettings: [
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "BLOCK_NONE" }
-        ],
-        generationConfig: {
-          temperature: 0.7,
-        }
-      };
-
-      const response = await fetch(`${API_URL}/api/ai/generate`,{ 
+      const response = await fetch('/api/ai/generate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: modelName,
-          payload
+          payload: {
+            contents: [
+              ...history,
+              { role: "user", parts: [{ text: prompt }] }
+            ],
+            generationConfig: {
+              temperature: 0.7,
+            },
+            systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined
+          }
         })
       });
 
-      const data = await response.json();
-      
       if (!response.ok) {
-        throw new Error(data.error?.message || data.error || "Proxy request failed");
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Backend returned ${response.status}`);
       }
 
+      const data = await response.json();
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
       
-      if (!text) {
-        throw new Error("Gemini returned an empty response (possibly blocked by safety filters or empty output).");
+      if (text === undefined) {
+        const finishReason = data.candidates?.[0]?.finishReason;
+        if (finishReason === 'SAFETY') {
+          return { text: "I apologize, but I cannot respond to that request as it triggers my safety filters. Let's try a different interview topic." };
+        }
+        throw new Error(`Gemini returned an empty response. Finish reason: ${finishReason}`);
       }
 
-      return {
-        text: text,
-      };
-    } catch (error: any) {
-      lastError = error;
-      const errorMsg = error.message?.toLowerCase() || "";
-      console.error(`[AI] Error during generation:`, error);
-      
-      if (errorMsg.includes('safety') || errorMsg.includes('blocked')) {
-        return { text: "I apologize, but I cannot respond to that request as it triggers my safety filters. Let's try a different interview topic." };
-      }
-      
-      retries--;
-      if (retries > 0) {
-        const delay = (4 - retries) * 1500;
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
+      return { text };
+    }, 3, 2000, (err, attempt) => {
+      console.warn(`[AI] Retry attempt ${attempt} due to error:`, err.message);
+    });
+  } catch (error: any) {
+    const errorMsg = error.message?.toLowerCase() || "";
+    console.error(`[AI] Final error during generation:`, error);
+    
+    if (errorMsg.includes('safety') || errorMsg.includes('blocked')) {
+      return { text: "I apologize, but I cannot respond to that request as it triggers my safety filters. Let's try a different interview topic." };
     }
+    
+    if (errorMsg.includes('429') || errorMsg.includes('quota')) {
+      throw new Error("AI service is currently busy (quota exceeded). Please wait a moment before trying again.");
+    }
+
+    throw new Error(`AI Error: ${error.message || "Unknown error"}. Please check your connection and try again.`);
   }
-  
-  const finalErrorMessage = lastError?.message || "Unknown API error";
-  console.error("[AI] All retries failed. Final error:", finalErrorMessage);
-  throw new Error(`AI Error: ${finalErrorMessage}. Please try again in a moment.`);
 }
 
 /**
- * Streams content using the Gemini model via backend proxy.
- * Note: Real streaming through proxy requires SSE or similar, 
- * but for now we'll simulate it for compatibility.
+ * Streams content using the backend proxy.
+ * Note: Real streaming through proxy is complex, so we fallback to non-streaming for now.
  */
 export async function streamContent(
   prompt: string,
@@ -103,49 +124,48 @@ export async function streamContent(
     onChunk(result.text);
   } catch (error: any) {
     console.error("[AI] Streaming Error:", error);
-    throw error;
+    const errorMsg = error.message?.toLowerCase() || "";
+    if (errorMsg.includes('safety') || errorMsg.includes('blocked')) {
+      onChunk("I apologize, but I cannot respond to that request as it triggers my safety filters.");
+    } else {
+      throw error;
+    }
   }
 }
 
 /**
- * Generates speech from text using Gemini TTS via backend proxy.
+ * Generates speech from text using backend proxy.
  */
 export async function generateSpeech(text: string): Promise<string | null> {
   try {
-    const modelName = "gemini-2.5-flash-preview-tts";
-    console.log(`[TTS] Generating speech via proxy for: "${text.substring(0, 30)}..."`);
-    
-    const payload = {
-      contents: [{ parts: [{ text: `Say in a professional, clear, and encouraging tone: ${text}` }] }],
-      generationConfig: {
-        responseModalities: ["AUDIO"],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Zephyr' },
-          },
-        },
-      }
-    };
+    return await withRetry(async () => {
+      const modelName = "gemini-2.5-flash-preview-tts";
+      console.log(`[TTS] Generating speech via backend with ${modelName}`);
+      
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelName,
+          payload: {
+            contents: [{ parts: [{ text: `Say in a professional, clear, and encouraging tone: ${text}` }] }],
+            generationConfig: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: { voiceName: 'Zephyr' },
+                },
+              },
+            },
+          }
+        })
+      });
 
-    const response = await fetch(`${API_URL}/api/ai/generate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: modelName,
-        payload
-      })
-    });
-
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.error?.message || "TTS Proxy failed");
-    }
-
-    const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    return base64Audio || null;
+      if (!response.ok) return null;
+      const data = await response.json();
+      const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      return base64Audio || null;
+    }, 2, 1000);
   } catch (error) {
     console.error("[TTS] Gemini TTS Error:", error);
     return null;
@@ -153,50 +173,42 @@ export async function generateSpeech(text: string): Promise<string | null> {
 }
 
 /**
- * Generates an image using Gemini via backend proxy.
+ * Generates an image using backend proxy.
  */
 export async function generateImage(prompt: string): Promise<string | null> {
   try {
-    const modelName = "gemini-3.1-flash-image-preview";
-    console.log(`[Image] Generating image via proxy for: "${prompt.substring(0, 30)}..."`);
-    
-    const payload = {
-      contents: {
-        parts: [{ text: prompt }]
-      },
-      generationConfig: {
-        imageConfig: {
-          aspectRatio: "1:1",
-          imageSize: "1K"
+    return await withRetry(async () => {
+      const modelName = "gemini-3.1-flash-image-preview";
+      console.log(`[Image] Generating image via backend with ${modelName}`);
+      
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelName,
+          payload: {
+            contents: {
+              parts: [{ text: prompt }]
+            },
+            generationConfig: {
+              imageConfig: {
+                aspectRatio: "1:1",
+                imageSize: "1K"
+              }
+            }
+          }
+        })
+      });
+
+      if (!response.ok) return null;
+      const data = await response.json();
+      for (const part of data.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          return `data:image/png;base64,${part.inlineData.data}`;
         }
       }
-    };
-
-    const response = await fetch(`${API_URL}/api/ai/generate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: modelName,
-        payload
-      })
-    });
-
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.error?.message || "Image Proxy failed");
-    }
-
-    // Find the image part in the response
-    for (const part of data.candidates?.[0]?.content?.parts || []) {
-      if (part.inlineData) {
-        return `data:image/png;base64,${part.inlineData.data}`;
-      }
-    }
-    
-    return null;
+      return null;
+    }, 2, 2000);
   } catch (error) {
     console.error("[Image] Gemini Image Error:", error);
     return null;
@@ -204,59 +216,49 @@ export async function generateImage(prompt: string): Promise<string | null> {
 }
 
 /**
- * Generates a video using Veo via backend proxy.
+ * Generates a video using backend proxy.
  */
 export async function generateVideo(prompt: string): Promise<string | null> {
   try {
-    const modelName = "veo-3.1-fast-generate-preview";
-    console.log(`[Video] Generating video via proxy for: "${prompt.substring(0, 30)}..."`);
-    
-    const payload = {
-      prompt,
-      config: {
-        numberOfVideos: 1,
-        resolution: '720p',
-        aspectRatio: '1:1'
+    return await withRetry(async () => {
+      const modelName = "veo-3.1-fast-generate-preview";
+      console.log(`[Video] Generating video via backend with ${modelName}`);
+      
+      const response = await fetch('/api/ai/generate-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelName,
+          payload: {
+            prompt,
+            config: {
+              numberOfVideos: 1,
+              resolution: '720p',
+              aspectRatio: '1:1'
+            }
+          }
+        })
+      });
+
+      if (!response.ok) return null;
+      let operation = await response.json();
+
+      let retries = 30; // 5 minutes max
+      while (!operation.done && retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, 10000));
+        const opRes = await fetch(`/api/ai/operations/${operation.name}`);
+        operation = await opRes.json();
+        retries--;
       }
-    };
 
-    let response = await fetch(`${API_URL}/api/ai/generate-video`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: modelName,
-        payload
-      })
-    });
-
-    let data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.error?.message || "Video Proxy failed");
-    }
-
-    let operation = data;
-
-    // Poll for completion
-    let retries = 30; // 5 minutes max
-    while (!operation.done && retries > 0) {
-      await new Promise(resolve => setTimeout(resolve, 10000));
-      const pollRes = await fetch(`${API_URL}/api/ai/operations/${operation.name}`);
-      operation = await pollRes.json();
-      retries--;
-    }
-
-    if (operation.done && operation.response?.generatedVideos?.[0]?.video?.uri) {
-      const videoUri = operation.response.generatedVideos[0].video.uri;
-      // Fetch the video with the API key (handled by proxy)
-      const videoRes = await fetch(`${API_URL}/api/ai/video-proxy?uri=${encodeURIComponent(videoUri)}`);
-      const blob = await videoRes.blob();
-      return URL.createObjectURL(blob);
-    }
-    
-    return null;
+      if (operation.done && operation.response?.generatedVideos?.[0]?.video?.uri) {
+        const videoUri = operation.response.generatedVideos[0].video.uri;
+        const videoProxyRes = await fetch(`/api/ai/video-proxy?uri=${encodeURIComponent(videoUri)}`);
+        const blob = await videoProxyRes.blob();
+        return URL.createObjectURL(blob);
+      }
+      return null;
+    }, 1, 1000);
   } catch (error) {
     console.error("[Video] Gemini Video Error:", error);
     return null;
