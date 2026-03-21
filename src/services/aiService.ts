@@ -5,16 +5,33 @@ export interface AIResponse {
   text: string;
 }
 
-const API_KEY = process.env.GEMINI_API_KEY || '';
+const API_KEY_FALLBACK = typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '';
 
 /**
- * Helper to get a fresh AI instance
+ * Helper to get the current API key.
+ * Prioritizes the platform-selected API_KEY for advanced models.
+ */
+function getApiKey() {
+  try {
+    return (typeof process !== 'undefined' && process.env?.API_KEY) || 
+           (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) || 
+           '';
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * Helper to get a fresh AI instance.
+ * Guidelines recommend creating a new instance right before making an API call
+ * to ensure it uses the most up-to-date key from the selection dialog.
  */
 function getAI() {
-  if (!API_KEY) {
-    throw new Error("Gemini API Key is not configured. Please add GEMINI_API_KEY to your secrets.");
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    throw new Error("Gemini API Key is not configured. Please add GEMINI_API_KEY to your secrets or select a key via the settings.");
   }
-  return new GoogleGenAI({ apiKey: API_KEY });
+  return new GoogleGenAI({ apiKey });
 }
 
 /**
@@ -187,7 +204,13 @@ export async function generateSpeech(text: string): Promise<string | null> {
       const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       return base64Audio || null;
     }, 2, 1000);
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message?.includes("Requested entity was not found")) {
+      console.error("[TTS] API Key error. Please re-select your API key.");
+      if (typeof window !== 'undefined' && (window as any).aistudio) {
+        (window as any).aistudio.openSelectKey();
+      }
+    }
     console.error("[TTS] Gemini TTS Error:", error);
     return null;
   }
@@ -223,7 +246,13 @@ export async function generateImage(prompt: string): Promise<string | null> {
       }
       return null;
     }, 2, 2000);
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message?.includes("Requested entity was not found")) {
+      console.error("[Image] API Key error. Please re-select your API key.");
+      if (typeof window !== 'undefined' && (window as any).aistudio) {
+        (window as any).aistudio.openSelectKey();
+      }
+    }
     console.error("[Image] Gemini Image Error:", error);
     return null;
   }
@@ -261,7 +290,7 @@ export async function generateVideo(prompt: string): Promise<string | null> {
         const videoRes = await fetch(videoUri, {
           method: 'GET',
           headers: {
-            'x-goog-api-key': API_KEY,
+            'x-goog-api-key': getApiKey(),
           },
         });
         const blob = await videoRes.blob();
@@ -269,7 +298,13 @@ export async function generateVideo(prompt: string): Promise<string | null> {
       }
       return null;
     }, 1, 1000); // Only 1 retry for video as it's expensive and slow
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message?.includes("Requested entity was not found")) {
+      console.error("[Video] API Key error. Please re-select your API key.");
+      if (typeof window !== 'undefined' && (window as any).aistudio) {
+        (window as any).aistudio.openSelectKey();
+      }
+    }
     console.error("[Video] Gemini Video Error:", error);
     return null;
   }

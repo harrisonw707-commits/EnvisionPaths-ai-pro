@@ -208,7 +208,7 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
 
-const PORT = Number(process.env.PORT) || 8080;
+const PORT = 3000;
   console.log(`[SERVER] Using PORT=${PORT}`);
 
   // Ensure harrisonw707@gmail.com is an admin
