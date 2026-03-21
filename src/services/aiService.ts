@@ -5,23 +5,24 @@ export interface AIResponse {
   text: string;
 }
 
-const API_KEY_FALLBACK = 
-  (typeof globalThis !== 'undefined' && (globalThis as any).API_KEY) ||
-  (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '') || 
-  '';
+const API_KEY_FALLBACK = typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '';
 
 /**
  * Helper to get the current API key.
- * Prioritizes the AI Studio runtime-injected key (globalThis.API_KEY),
- * then falls back to build-time env vars.
+ * Prioritizes the platform-selected API_KEY for advanced models.
  */
 function getApiKey() {
   try {
-    // AI Studio injects the selected key into globalThis.API_KEY at runtime
-    return (typeof globalThis !== 'undefined' && (globalThis as any).API_KEY) ||
-           (typeof process !== 'undefined' && process.env?.API_KEY) || 
-           (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) || 
-           '';
+    // Priority 1: Dynamic key from platform selection dialog (runtime)
+    // We check window.process directly to avoid Vite's define replacement
+    const runtimeKey = (typeof window !== 'undefined') ? 
+      ((window as any).process?.env?.API_KEY || (window as any).process?.env?.GEMINI_API_KEY) : 
+      undefined;
+    
+    if (runtimeKey) return runtimeKey;
+
+    // Priority 2: Build-time or environment key
+    return process.env.GEMINI_API_KEY || '';
   } catch (e) {
     return '';
   }
@@ -34,8 +35,8 @@ function getApiKey() {
  */
 function getAI() {
   const apiKey = getApiKey();
-  if (!apiKey) {
-    throw new Error("Gemini API Key is not configured. Please add GEMINI_API_KEY to your secrets or select a key via the settings.");
+  if (!apiKey || apiKey === 'undefined' || apiKey === 'null' || apiKey.length < 10) {
+    throw new Error("Gemini API Key is missing or failed to load from secrets. Please check the 'Secrets' menu in AI Studio and ensure your GEMINI_API_KEY is correctly set.");
   }
   return new GoogleGenAI({ apiKey });
 }
