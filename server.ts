@@ -452,7 +452,7 @@ const PORT = Number(process.env.PORT) || 8080;
         model: model || 'gemini-2.0-flash',
         contents: payload.contents,
         config: payload.generationConfig,
-        // systemInstruction: payload.systemInstruction // Handled by contents if passed as system role or explicitly
+        systemInstruction: payload.systemInstruction
       });
 
       // The SDK returns a response object that matches the REST API structure mostly
