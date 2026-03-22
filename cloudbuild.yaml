@@ -21,14 +21,6 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
-      - '--update-env-vars'
-      - 'GEMINI_API_KEY=$_GEMINI_API_KEY,STRIPE_SECRET_KEY=$_STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET=$_STRIPE_WEBHOOK_SECRET,SESSION_SECRET=$_SESSION_SECRET'
-
-substitutions:
-  _GEMINI_API_KEY: ''
-  _STRIPE_SECRET_KEY: ''
-  _STRIPE_WEBHOOK_SECRET: ''
-  _SESSION_SECRET: ''
 
 images:
   - 'gcr.io/$PROJECT_ID/envisionpaths-ai-pro'
