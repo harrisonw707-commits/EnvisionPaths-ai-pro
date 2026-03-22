@@ -23,10 +23,12 @@ RUN apk add --no-cache libc6-compat
 
 # Copy production dependencies
 COPY --from=deps /app/node_modules ./node_modules
-# Copy source files for tsx
-COPY . .
-# Copy built assets
+# Copy built backend
+COPY --from=build /app/server.js ./server.js
+# Copy built frontend assets
 COPY --from=build /app/dist ./dist
+# Copy public folder if it exists (for static assets not handled by vite)
+COPY --from=build /app/public ./public
 
 EXPOSE 8080
 CMD ["npm", "start"]
