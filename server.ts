@@ -13,6 +13,11 @@ import { appendFileSync } from 'node:fs';
 appendFileSync('server_init.log', `[${new Date().toISOString()}] Server file loaded\n`);
 import QRCode from 'qrcode';
 
+// Startup diagnostics
+console.log('[STARTUP] GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? 'LOADED ✓' : 'MISSING ✗');
+console.log('[STARTUP] STRIPE_SECRET_KEY:', process.env.STRIPE_SECRET_KEY ? 'LOADED ✓' : 'MISSING ✗');
+console.log('[STARTUP] NODE_ENV:', process.env.NODE_ENV);
+
 /**
  * EnvisionPaths Server Entry Point
  * 
@@ -573,7 +578,10 @@ const PORT = Number(process.env.PORT) || 8080;
 
   app.get("/api/debug/env", (req, res) => {
     res.json({
-      gemini: process.env.GEMINI_API_KEY ? "loaded" : "missing"
+      gemini: process.env.GEMINI_API_KEY ? "loaded" : "missing",
+      stripe: process.env.STRIPE_SECRET_KEY ? "loaded" : "missing",
+      node_env: process.env.NODE_ENV,
+      port: process.env.PORT
     });
   });
 
