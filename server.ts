@@ -577,11 +577,15 @@ const PORT = Number(process.env.PORT) || 8080;
   });
 
   app.get("/api/debug/env", (req, res) => {
+    const geminiKey = process.env.GEMINI_API_KEY;
     res.json({
-      gemini: process.env.GEMINI_API_KEY ? "loaded" : "missing",
-      stripe: process.env.STRIPE_SECRET_KEY ? "loaded" : "missing",
+      gemini: geminiKey ? "loaded" : "missing",
+      gemini_preview: geminiKey ? geminiKey.substring(0, 4) + "..." : "none",
+      gemini_length: geminiKey ? geminiKey.length : 0,
       node_env: process.env.NODE_ENV,
-      port: process.env.PORT
+      port: process.env.PORT,
+      total_env_vars: Object.keys(process.env).length,
+      all_env_keys: Object.keys(process.env).sort()
     });
   });
 
