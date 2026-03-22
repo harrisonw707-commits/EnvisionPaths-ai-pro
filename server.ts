@@ -449,7 +449,7 @@ const PORT = Number(process.env.PORT) || 8080;
     try {
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
-        model: model || 'gemini-3-flash-preview',
+        model: model || 'gemini-2.0-flash',
         contents: payload.contents,
         config: payload.generationConfig,
         // systemInstruction: payload.systemInstruction // Handled by contents if passed as system role or explicitly
@@ -467,7 +467,7 @@ const PORT = Number(process.env.PORT) || 8080;
 
   // Generic Generate Endpoint (as requested by user)
   app.post('/api/generate', async (req, res) => {
-    const { model = 'gemini-3-flash-preview', ...payload } = req.body;
+    const { model = 'gemini-2.0-flash', ...payload } = req.body;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
