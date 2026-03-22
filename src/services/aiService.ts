@@ -45,7 +45,7 @@ export async function generateContent(
 ): Promise<AIResponse> {
   try {
     return await withRetry(async () => {
-      const modelName = "gemini-3-flash-preview";
+      const modelName = "gemini-2.0-flash";
       console.log(`[AI] Generating content via backend with ${modelName}`);
       
       const response = await fetch('/api/ai/generate', {
