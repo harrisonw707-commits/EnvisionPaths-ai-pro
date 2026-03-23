@@ -8,6 +8,8 @@ steps:
     args: ['push', 'gcr.io/$PROJECT_ID/envisionpaths-ai-pro']
   
   # Deploy container image to Cloud Run
+  # IMPORTANT: Actual secret values must be set in Cloud Build → Triggers → Substitution Variables
+  # in the Google Cloud Console. Never hardcode real secret values in this file.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -21,6 +23,15 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'GEMINI_API_KEY=$_GEMINI_API_KEY,STRIPE_SECRET_KEY=$_STRIPE_SECRET_KEY,STRIPE_PRICE_BEGINNER_ID=$_STRIPE_PRICE_BEGINNER_ID,STRIPE_PRICE_PRO_ID=$_STRIPE_PRICE_PRO_ID,APP_URL=$_APP_URL'
+
+substitutions:
+  _GEMINI_API_KEY: ''
+  _STRIPE_SECRET_KEY: ''
+  _STRIPE_PRICE_BEGINNER_ID: ''
+  _STRIPE_PRICE_PRO_ID: ''
+  _APP_URL: 'https://envisionpaths-36560900479.us-west1.run.app'
 
 images:
   - 'gcr.io/$PROJECT_ID/envisionpaths-ai-pro'
