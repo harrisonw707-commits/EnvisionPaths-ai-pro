@@ -1,33 +1,33 @@
 @import "tailwindcss";
 
 @theme {
-  --color-theme-main: #0b0b0b;
-  --color-theme-bg: #0b0b0b;
-  --color-theme-surface: #111111;
-  --color-theme-surface-hover: #1a1a1a;
-  --color-theme-input: #1a1a1a;
-  --color-theme-input-hover: #222222;
-  --color-theme-primary: #f5f5f5;
-  --color-theme-secondary: #6b7280;
-  --color-theme-accent: #ef4444;
+  --color-theme-main: #000000;
+  --color-theme-bg: #000000;
+  --color-theme-surface: #0a0a0a;
+  --color-theme-surface-hover: #111111;
+  --color-theme-input: #111111;
+  --color-theme-input-hover: #1a1a1a;
+  --color-theme-primary: #ffffff;
+  --color-theme-secondary: #888888;
+  --color-theme-accent: #dc2626;
   --color-theme-border: #1a1a1a;
 }
 
 :root {
-  --bg: #0b0b0b;
-  --ink: #f5f5f5;
-  --accent: #ef4444;
+  --bg: #000000;
+  --ink: #ffffff;
+  --accent: #dc2626;
 }
 
 .theme-light {
-  --color-theme-main: #f5f5f5;
-  --color-theme-surface: #ffffff;
-  --color-theme-surface-hover: #f0f0f0;
-  --color-theme-input: #f0f0f0;
+  --color-theme-main: #ffffff;
+  --color-theme-surface: #f5f5f5;
+  --color-theme-surface-hover: #eeeeee;
+  --color-theme-input: #eeeeee;
   --color-theme-input-hover: #e5e5e5;
-  --color-theme-primary: #0b0b0b;
-  --color-theme-secondary: #6b7280;
-  --color-theme-accent: #ef4444;
+  --color-theme-primary: #000000;
+  --color-theme-secondary: #666666;
+  --color-theme-accent: #dc2626;
   --color-theme-border: rgba(0, 0, 0, 0.1);
 }
 
