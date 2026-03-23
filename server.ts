@@ -209,11 +209,7 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
 
-<<<<<<< HEAD
 const PORT = Number(process.env.PORT) || 8080;
-=======
-const PORT = parseInt(process.env.PORT || "8080", 10);
->>>>>>> 70015ee (fix: updated build and server)
   console.log(`[SERVER] Using PORT=${PORT}`);
 
   // Ensure harrisonw707@gmail.com is an admin
