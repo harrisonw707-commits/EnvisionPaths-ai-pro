@@ -13,11 +13,6 @@ import { appendFileSync } from 'node:fs';
 appendFileSync('server_init.log', `[${new Date().toISOString()}] Server file loaded\n`);
 import QRCode from 'qrcode';
 
-// Startup diagnostics
-console.log('[STARTUP] GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? 'LOADED ✓' : 'MISSING ✗');
-console.log('[STARTUP] STRIPE_SECRET_KEY:', process.env.STRIPE_SECRET_KEY ? 'LOADED ✓' : 'MISSING ✗');
-console.log('[STARTUP] NODE_ENV:', process.env.NODE_ENV);
-
 /**
  * EnvisionPaths Server Entry Point
  * 
@@ -454,10 +449,10 @@ const PORT = Number(process.env.PORT) || 8080;
     try {
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
-        model: model || 'gemini-2.0-flash',
+        model: model || 'gemini-3-flash-preview',
         contents: payload.contents,
         config: payload.generationConfig,
-        systemInstruction: payload.systemInstruction
+        // systemInstruction: payload.systemInstruction // Handled by contents if passed as system role or explicitly
       });
 
       // The SDK returns a response object that matches the REST API structure mostly
@@ -472,7 +467,7 @@ const PORT = Number(process.env.PORT) || 8080;
 
   // Generic Generate Endpoint (as requested by user)
   app.post('/api/generate', async (req, res) => {
-    const { model = 'gemini-2.0-flash', ...payload } = req.body;
+    const { model = 'gemini-3-flash-preview', ...payload } = req.body;
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
@@ -577,15 +572,8 @@ const PORT = Number(process.env.PORT) || 8080;
   });
 
   app.get("/api/debug/env", (req, res) => {
-    const geminiKey = process.env.GEMINI_API_KEY;
     res.json({
-      gemini: geminiKey ? "loaded" : "missing",
-      gemini_preview: geminiKey ? geminiKey.substring(0, 4) + "..." : "none",
-      gemini_length: geminiKey ? geminiKey.length : 0,
-      node_env: process.env.NODE_ENV,
-      port: process.env.PORT,
-      total_env_vars: Object.keys(process.env).length,
-      all_env_keys: Object.keys(process.env).sort()
+      gemini: process.env.GEMINI_API_KEY ? "loaded" : "missing"
     });
   });
 
