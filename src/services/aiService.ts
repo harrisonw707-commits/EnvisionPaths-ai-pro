@@ -1,4 +1,10 @@
-// AI Service calling the backend proxy instead of Gemini directly
+// AI Service calling Gemini directly from the frontend
+import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
+
+// Initialize AI with the environment-provided API key
+// The platform handles the injection of GEMINI_API_KEY
+const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
 export interface AIResponse {
   text: string;
 }
@@ -36,7 +42,7 @@ async function withRetry<T>(
 }
 
 /**
- * Generates content using the backend proxy.
+ * Generates content using Gemini directly.
  */
 export async function generateContent(
   prompt: string, 
@@ -46,36 +52,25 @@ export async function generateContent(
   try {
     return await withRetry(async () => {
       const modelName = "gemini-3-flash-preview";
-      console.log(`[AI] Generating content via backend with ${modelName}`);
+      console.log(`[AI] Generating content directly with ${modelName}`);
       
-      const response = await fetch('/api/ai/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: modelName,
-          payload: {
-            contents: [
-              ...history,
-              { role: "user", parts: [{ text: prompt }] }
-            ],
-            generationConfig: {
-              temperature: 0.7,
-            },
-            systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined
-          }
-        })
+      const ai = getAI();
+      const response: GenerateContentResponse = await ai.models.generateContent({
+        model: modelName,
+        contents: [
+          ...history,
+          { role: "user", parts: [{ text: prompt }] }
+        ],
+        config: {
+          systemInstruction: systemInstruction,
+          temperature: 0.7,
+        },
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Backend returned ${response.status}`);
-      }
-
-      const data = await response.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      const text = response.text;
       
       if (text === undefined) {
-        const finishReason = data.candidates?.[0]?.finishReason;
+        const finishReason = response.candidates?.[0]?.finishReason;
         if (finishReason === 'SAFETY') {
           return { text: "I apologize, but I cannot respond to that request as it triggers my safety filters. Let's try a different interview topic." };
         }
@@ -98,13 +93,16 @@ export async function generateContent(
       throw new Error("AI service is currently busy (quota exceeded). Please wait a moment before trying again.");
     }
 
+    if (errorMsg.includes('api key not valid')) {
+      throw new Error("Gemini API Key is invalid or not configured. Please check your AI Studio settings.");
+    }
+
     throw new Error(`AI Error: ${error.message || "Unknown error"}. Please check your connection and try again.`);
   }
 }
 
 /**
- * Streams content using the backend proxy.
- * Note: Real streaming through proxy is complex, so we fallback to non-streaming for now.
+ * Streams content using Gemini directly.
  */
 export async function streamContent(
   prompt: string,
@@ -113,8 +111,24 @@ export async function streamContent(
   history: any[] = []
 ): Promise<void> {
   try {
-    const result = await generateContent(prompt, systemInstruction, history);
-    onChunk(result.text);
+    const ai = getAI();
+    const response = await ai.models.generateContentStream({
+      model: "gemini-3-flash-preview",
+      contents: [
+        ...history,
+        { role: "user", parts: [{ text: prompt }] }
+      ],
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.7,
+      },
+    });
+
+    for await (const chunk of response) {
+      if (chunk.text) {
+        onChunk(chunk.text);
+      }
+    }
   } catch (error: any) {
     console.error("[AI] Streaming Error:", error);
     const errorMsg = error.message?.toLowerCase() || "";
@@ -127,36 +141,29 @@ export async function streamContent(
 }
 
 /**
- * Generates speech from text using backend proxy.
+ * Generates speech from text using Gemini directly.
  */
 export async function generateSpeech(text: string): Promise<string | null> {
   try {
     return await withRetry(async () => {
       const modelName = "gemini-2.5-flash-preview-tts";
-      console.log(`[TTS] Generating speech via backend with ${modelName}`);
+      console.log(`[TTS] Generating speech directly with ${modelName}`);
       
-      const response = await fetch('/api/ai/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: modelName,
-          payload: {
-            contents: [{ parts: [{ text: `Say in a professional, clear, and encouraging tone: ${text}` }] }],
-            generationConfig: {
-              responseModalities: ["AUDIO"],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: 'Zephyr' },
-                },
-              },
+      const ai = getAI();
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: [{ parts: [{ text: `Say in a professional, clear, and encouraging tone: ${text}` }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Zephyr' },
             },
-          }
-        })
+          },
+        },
       });
 
-      if (!response.ok) return null;
-      const data = await response.json();
-      const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       return base64Audio || null;
     }, 2, 1000);
   } catch (error) {
@@ -166,36 +173,29 @@ export async function generateSpeech(text: string): Promise<string | null> {
 }
 
 /**
- * Generates an image using backend proxy.
+ * Generates an image using Gemini directly.
  */
 export async function generateImage(prompt: string): Promise<string | null> {
   try {
     return await withRetry(async () => {
       const modelName = "gemini-3.1-flash-image-preview";
-      console.log(`[Image] Generating image via backend with ${modelName}`);
+      console.log(`[Image] Generating image directly with ${modelName}`);
       
-      const response = await fetch('/api/ai/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: modelName,
-          payload: {
-            contents: {
-              parts: [{ text: prompt }]
-            },
-            generationConfig: {
-              imageConfig: {
-                aspectRatio: "1:1",
-                imageSize: "1K"
-              }
-            }
+      const ai = getAI();
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: {
+          parts: [{ text: prompt }]
+        },
+        config: {
+          imageConfig: {
+            aspectRatio: "1:1",
+            imageSize: "1K"
           }
-        })
+        }
       });
 
-      if (!response.ok) return null;
-      const data = await response.json();
-      for (const part of data.candidates?.[0]?.content?.parts || []) {
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
         if (part.inlineData) {
           return `data:image/png;base64,${part.inlineData.data}`;
         }
@@ -209,45 +209,45 @@ export async function generateImage(prompt: string): Promise<string | null> {
 }
 
 /**
- * Generates a video using backend proxy.
+ * Generates a video using Gemini directly.
  */
 export async function generateVideo(prompt: string): Promise<string | null> {
   try {
+    // Check for API key selection if using Veo models
+    if (window.aistudio && !(await window.aistudio.hasSelectedApiKey())) {
+      await window.aistudio.openSelectKey();
+    }
+
     return await withRetry(async () => {
       const modelName = "veo-3.1-fast-generate-preview";
-      console.log(`[Video] Generating video via backend with ${modelName}`);
+      console.log(`[Video] Generating video directly with ${modelName}`);
       
-      const response = await fetch('/api/ai/generate-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: modelName,
-          payload: {
-            prompt,
-            config: {
-              numberOfVideos: 1,
-              resolution: '720p',
-              aspectRatio: '1:1'
-            }
-          }
-        })
+      const ai = getAI();
+      let operation = await ai.models.generateVideos({
+        model: modelName,
+        prompt,
+        config: {
+          numberOfVideos: 1,
+          resolution: '720p',
+          aspectRatio: '1:1'
+        }
       });
 
-      if (!response.ok) return null;
-      let operation = await response.json();
-
-      let retries = 30; // 5 minutes max
-      while (!operation.done && retries > 0) {
+      while (!operation.done) {
         await new Promise(resolve => setTimeout(resolve, 10000));
-        const opRes = await fetch(`/api/ai/operations/${operation.name}`);
-        operation = await opRes.json();
-        retries--;
+        operation = await ai.operations.getVideosOperation({ operation });
       }
 
-      if (operation.done && operation.response?.generatedVideos?.[0]?.video?.uri) {
-        const videoUri = operation.response.generatedVideos[0].video.uri;
-        const videoProxyRes = await fetch(`/api/ai/video-proxy?uri=${encodeURIComponent(videoUri)}`);
-        const blob = await videoProxyRes.blob();
+      const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+      if (downloadLink) {
+        const apiKey = process.env.GEMINI_API_KEY;
+        const response = await fetch(downloadLink, {
+          method: 'GET',
+          headers: {
+            'x-goog-api-key': apiKey || '',
+          },
+        });
+        const blob = await response.blob();
         return URL.createObjectURL(blob);
       }
       return null;

@@ -7,7 +7,6 @@ import cors from 'cors';
 import Stripe from 'stripe';
 import * as bcryptjs from 'bcryptjs';
 import speakeasy from 'speakeasy';
-import { GoogleGenAI } from "@google/genai";
 import { appendFileSync } from 'node:fs';
 
 appendFileSync('server_init.log', `[${new Date().toISOString()}] Server file loaded\n`);
@@ -39,7 +38,10 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  originalError('[UNHANDLED REJECTION]', reason);
+  o
+  
+  
+  riginalError('[UNHANDLED REJECTION]', reason);
   logBuffer.push(`[${new Date().toISOString()}] UNHANDLED REJECTION: ${reason}`);
 });
 
@@ -209,7 +211,7 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
 
-const PORT = Number(process.env.PORT) || 8080;
+const PORT = 3000;
   console.log(`[SERVER] Using PORT=${PORT}`);
 
   // Ensure harrisonw707@gmail.com is an admin
@@ -313,6 +315,16 @@ const PORT = Number(process.env.PORT) || 8080;
         return null;
       }
 
+      // Force admin for specific email
+      if (user.email === 'harrisonw707@gmail.com') {
+        user.is_admin = 1;
+      }
+
+      // Admins always get 'pro' plan access
+      if (user.is_admin) {
+        user.plan_type = 'pro';
+      }
+
       return user;
     } catch (e: any) {
       console.error(`[AUTH] DB Error in getSessionUser: ${e.message}`);
@@ -399,6 +411,11 @@ const PORT = Number(process.env.PORT) || 8080;
         
         const fullUser = db.prepare('SELECT id, email, plan_type, is_admin FROM users WHERE id = ?').get(user.id) as any;
         
+        // Admins always get 'pro' plan access
+        if (fullUser && fullUser.is_admin) {
+          fullUser.plan_type = 'pro';
+        }
+        
         res.cookie('session_id', sessionId, { 
           httpOnly: true, 
           secure: true, 
@@ -435,127 +452,6 @@ const PORT = Number(process.env.PORT) || 8080;
     }
   });
 
-  // Gemini API Proxy
-  app.post('/api/ai/generate', async (req, res) => {
-    const { model, payload } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      return res.status(500).json({
-        error: "Gemini API Key is not configured on the server."
-      });
-    }
-
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: model || 'gemini-3-flash-preview',
-        contents: payload.contents,
-        config: payload.generationConfig,
-        // systemInstruction: payload.systemInstruction // Handled by contents if passed as system role or explicitly
-      });
-
-      // The SDK returns a response object that matches the REST API structure mostly
-      // but we need to ensure it's JSON serializable for the frontend
-      res.json(response);
-
-    } catch (err: any) {
-      console.error("Gemini request failed:", err);
-      res.status(500).json({ error: err.message || "AI request failed" });
-    }
-  });
-
-  // Generic Generate Endpoint (as requested by user)
-  app.post('/api/generate', async (req, res) => {
-    const { model = 'gemini-3-flash-preview', ...payload } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      return res.status(500).json({ error: "Gemini API Key is not configured on the server." });
-    }
-
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model,
-        ...payload
-      });
-      res.json(response);
-    } catch (err: any) {
-      console.error("Gemini generate request failed:", err);
-      res.status(500).json({ error: err.message || "AI request failed" });
-    }
-  });
-
-  // Video Generation Proxy
-  app.post('/api/ai/generate-video', async (req, res) => {
-    const { model, payload } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      return res.status(500).json({ error: "Gemini API Key is not configured." });
-    }
-
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-      const operation = await ai.models.generateVideos({
-        model: model || 'veo-3.1-fast-generate-preview',
-        prompt: payload.prompt,
-        image: payload.image,
-        config: payload.config
-      });
-
-      res.json(operation);
-    } catch (err: any) {
-      console.error("Video generation failed:", err);
-      res.status(500).json({ error: err.message || "Video generation failed" });
-    }
-  });
-
-  app.get('/api/ai/operations/*', async (req, res) => {
-    const name = (req.params as any)[0];
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      return res.status(500).json({ error: "Gemini API Key is not configured." });
-    }
-
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-      const operation = await ai.operations.getVideosOperation({
-        operation: { name } as any
-      });
-
-      res.json(operation);
-    } catch (err: any) {
-      console.error("Polling operation failed:", err);
-      res.status(500).json({ error: err.message || "Polling failed" });
-    }
-  });
-
-  app.get('/api/ai/video-proxy', async (req, res) => {
-    const { uri } = req.query;
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!uri) return res.status(400).json({ error: "URI required" });
-
-    try {
-      const response = await fetch(uri as string, {
-        method: "GET",
-        headers: {
-          "x-goog-api-key": apiKey!
-        }
-      });
-
-      const buffer = await response.arrayBuffer();
-      res.set('Content-Type', response.headers.get('Content-Type') || 'video/mp4');
-      res.send(Buffer.from(buffer));
-    } catch (err) {
-      console.error("Video proxy failed:", err);
-      res.status(500).json({ error: "Video proxy failed" });
-    }
-  });
-
   // Health check
   app.get('/api/health', (req, res) => {
     try {
@@ -582,40 +478,57 @@ const PORT = Number(process.env.PORT) || 8080;
 
   // API Routes
   app.post('/api/auth/signup', async (req, res) => {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
-    }
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  try {
+    const hashedPassword = await bcryptjs.hash(password, 10);
+    let userId: number | bigint;
+
     try {
-      const hashedPassword = await bcryptjs.hash(password, 10);
-      let userId: number | bigint;
-      try {
-        const result = db.prepare('INSERT INTO users (email, password) VALUES (?, ?)').run(email, hashedPassword);
-        userId = result.lastInsertRowid;
-      } catch (e: any) {
-        if (e.message.includes('UNIQUE')) {
-          // If it's the primary user, allow them to "reset" by signing up again
-          if (email === 'harrisonw707@gmail.com') {
-            db.prepare('UPDATE users SET password = ? WHERE email = ?').run(hashedPassword, email);
-            const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: number };
-            userId = user.id;
-          } else {
-            return res.status(400).json({ error: 'Email already exists. Please sign in.' });
-          }
-        } else {
-          throw e;
-        }
-      }
-      
-      const sessionId = Math.random().toString(36).substring(2);
-      db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, userId);
-      res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
-      res.json({ success: true, user: { email, plan_type: 'free' }, sessionId });
+      const result = db.prepare('INSERT INTO users (email, password) VALUES (?, ?)').run(email, hashedPassword);
+      userId = result.lastInsertRowid;
     } catch (e: any) {
-      console.error('[SIGNUP ERROR]', e);
-      res.status(400).json({ error: 'Signup failed: ' + e.message });
+      if (e.message.includes('UNIQUE')) {
+        if (email === 'harrisonw707@gmail.com') {
+          db.prepare('UPDATE users SET password = ? WHERE email = ?').run(hashedPassword, email);
+          const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: number };
+          userId = user.id;
+        } else {
+          return res.status(400).json({ error: 'Email already exists. Please sign in.' });
+        }
+      } else {
+        throw e;
+      }
+    } 
+
+    const isAdmin = email === 'harrisonw707@gmail.com';
+    if (isAdmin) {
+      db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(userId);
     }
-  });
+
+    const sessionId = Math.random().toString(36).substring(2);
+    db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, userId);
+    res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
+
+    return res.json({
+      success: true,
+      user: {
+        email,
+        plan_type: isAdmin ? 'pro' : 'free',
+        is_admin: isAdmin
+      },
+      sessionId
+    });
+
+  } catch (e: any) {
+    console.error('[SIGNUP ERROR]', e);
+    return res.status(400).json({ error: 'Signup failed: ' + e.message });
+  }
+});
 
   app.post('/api/auth/login', async (req, res) => {
     try {
@@ -645,7 +558,10 @@ const PORT = Number(process.env.PORT) || 8080;
           const sessionId = Math.random().toString(36).substring(2);
           db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
           res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
-          return res.json({ success: true, user: { email: user.email, plan_type: user.plan_type, is_admin: user.is_admin }, sessionId });
+          
+          // Admins always get 'pro' plan access
+          const responsePlan = user.is_admin ? 'pro' : user.plan_type;
+          return res.json({ success: true, user: { email: user.email, plan_type: responsePlan, is_admin: user.is_admin }, sessionId });
         }
       }
       res.status(401).json({ error: 'Invalid credentials' });
@@ -692,7 +608,10 @@ const PORT = Number(process.env.PORT) || 8080;
       const sessionId = Math.random().toString(36).substring(2);
       db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
       res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
-      res.json({ success: true, user: { email: user.email, plan_type: user.plan_type, is_admin: user.is_admin }, sessionId });
+      
+      // Admins always get 'pro' plan access
+      const responsePlan = user.is_admin ? 'pro' : user.plan_type;
+      res.json({ success: true, user: { email: user.email, plan_type: responsePlan, is_admin: user.is_admin }, sessionId });
     } else {
       res.status(401).json({ error: 'Invalid verification code' });
     }
@@ -807,6 +726,44 @@ const PORT = Number(process.env.PORT) || 8080;
       res.json({ success: true, user: { email: user.email, plan_type: user.plan_type }, sessionId });
     } else {
       res.status(401).json({ error: 'Invalid or expired verification code' });
+    }
+  });
+
+  app.get('/api/admin/activity-logs', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+    try {
+      const logs = db.prepare('SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT 100').all();
+      res.json({ logs });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/admin/update-user-plan', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+    const { userId, planType } = req.body;
+    try {
+      db.prepare('UPDATE users SET plan_type = ? WHERE id = ?').run(planType, userId);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/admin/reset-db', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user || !user.is_admin) return res.status(403).json({ error: 'Admin access required' });
+    try {
+      db.prepare('DELETE FROM simulations').run();
+      db.prepare('DELETE FROM activity_logs').run();
+      db.prepare('DELETE FROM reminders').run();
+      // Don't delete users, but maybe reset their plans?
+      db.prepare("UPDATE users SET plan_type = 'free' WHERE is_admin = 0").run();
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 
@@ -959,35 +916,48 @@ const PORT = Number(process.env.PORT) || 8080;
   });
 
   app.post('/api/simulations/start', (req, res) => {
-    console.log(`[SIMULATION] Start request received for user...`);
-    try {
-      const user = getSessionUser(req);
-      if (!user) {
-        console.warn('[SIMULATION] Start failed: Not authenticated');
-        return res.status(401).json({ error: 'Not authenticated' });
-      }
+  console.log('[SIMULATION] Start request received...');
+
+  try {
+    const user = getSessionUser(req);
+
+    if (!user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    // rest of your simulation logic...
+
+  } catch (e) {
+    res.status(500).json({ error: 'Something went wrong' });
+  }
+});
+
+  res.json({ message: "Route is working" });
+});
 
       const { job_title, industry } = req.body;
 
-      console.log(`[SIMULATION] Starting for user ${user.id} (${user.email}) - Plan: ${user.plan_type}`);
+      console.log(`[SIMULATION] Starting for user ${user.id} (${user.email}) - Plan: ${user.plan_type} (Admin: ${user.is_admin})`);
 
-      // Plan Gating Logic (Count started and completed simulations, but not glitched ones)
-      if (user.plan_type === 'free') {
-        const count = db.prepare("SELECT COUNT(*) as count FROM simulations WHERE user_id = ? AND status IN ('started', 'completed') AND created_at > date('now', 'start of month')").get(user.id) as { count: number };
-        console.log(`[SIMULATION] User ${user.id} has ${count.count} active simulations this month`);
-        if (count.count >= 2) {
-          return res.status(403).json({ error: 'Free limit reached. Upgrade for more simulations.' });
-        }
-      } else if (user.plan_type === 'beginner') {
-        const startDate = new Date(user.plan_start_date || Date.now());
-        const now = new Date();
-        const diffDays = Math.ceil((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-        console.log(`[SIMULATION] User ${user.id} beginner plan age: ${diffDays} days`);
-        if (diffDays > 30) {
-          // Downgrade to free if 30 days passed
-          console.log(`[SIMULATION] Downgrading user ${user.id} to free plan`);
-          db.prepare('UPDATE users SET plan_type = "free" WHERE id = ?').run(user.id);
-          return res.status(403).json({ error: 'Beginner plan expired. Please upgrade.' });
+      // Plan Gating Logic (Admins bypass all limits)
+      if (!user.is_admin) {
+        if (user.plan_type === 'free') {
+          const count = db.prepare("SELECT COUNT(*) as count FROM simulations WHERE user_id = ? AND status IN ('started', 'completed') AND created_at > date('now', 'start of month')").get(user.id) as { count: number };
+          console.log(`[SIMULATION] User ${user.id} has ${count.count} active simulations this month`);
+          if (count.count >= 2) {
+            return res.status(403).json({ error: 'Free limit reached. Upgrade for more simulations.' });
+          }
+        } else if (user.plan_type === 'beginner') {
+          const startDate = new Date(user.plan_start_date || Date.now());
+          const now = new Date();
+          const diffDays = Math.ceil((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+          console.log(`[SIMULATION] User ${user.id} beginner plan age: ${diffDays} days`);
+          if (diffDays > 30) {
+            // Downgrade to free if 30 days passed
+            console.log(`[SIMULATION] Downgrading user ${user.id} to free plan`);
+            db.prepare('UPDATE users SET plan_type = "free" WHERE id = ?').run(user.id);
+            return res.status(403).json({ error: 'Beginner plan expired. Please upgrade.' });
+          }
         }
       }
 
@@ -1001,7 +971,7 @@ const PORT = Number(process.env.PORT) || 8080;
       console.error(`[SIMULATION START ERROR] ${e.message}`, e.stack);
       res.status(500).json({ error: 'Failed to start simulation: ' + e.message });
     }
-  });
+
 
   app.post('/api/simulations/report-glitch', (req, res) => {
     const user = getSessionUser(req);
@@ -1321,6 +1291,7 @@ const PORT = Number(process.env.PORT) || 8080;
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
+
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ error: 'Current and new passwords are required' });
@@ -1349,6 +1320,19 @@ const PORT = Number(process.env.PORT) || 8080;
       res.status(500).json({ error: e.message });
     }
   });
+
+
+app.post('/api/ai/generate', async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return res.status(500).json({
+      error: "Gemini API Key is not configured on the server."
+    });
+  }
+
+  res.json({ message: "Route is working" });
+});
 
   // Catch-all for unknown API routes to prevent falling through to SPA fallback
   app.all('/api/*', (req, res) => {
