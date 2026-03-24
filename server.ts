@@ -38,10 +38,7 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  o
-  
-  
-  riginalError('[UNHANDLED REJECTION]', reason);
+  originalError('[UNHANDLED REJECTION]', reason);
   logBuffer.push(`[${new Date().toISOString()}] UNHANDLED REJECTION: ${reason}`);
 });
 
@@ -320,9 +317,9 @@ const PORT = 3000;
         user.is_admin = 1;
       }
 
-      // Admins always get 'pro' plan access
+      // Admins always get 'elite' plan access (full access)
       if (user.is_admin) {
-        user.plan_type = 'pro';
+        user.plan_type = 'elite';
       }
 
       return user;
@@ -916,24 +913,12 @@ const PORT = 3000;
   });
 
   app.post('/api/simulations/start', (req, res) => {
-  console.log('[SIMULATION] Start request received...');
-
-  try {
-    const user = getSessionUser(req);
-
-    if (!user) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-
-    // rest of your simulation logic...
-
-  } catch (e) {
-    res.status(500).json({ error: 'Something went wrong' });
-  }
-});
-
-  res.json({ message: "Route is working" });
-});
+    console.log('[SIMULATION] Start request received...');
+    try {
+      const user = getSessionUser(req);
+      if (!user) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
 
       const { job_title, industry } = req.body;
 
@@ -971,6 +956,7 @@ const PORT = 3000;
       console.error(`[SIMULATION START ERROR] ${e.message}`, e.stack);
       res.status(500).json({ error: 'Failed to start simulation: ' + e.message });
     }
+  });
 
 
   app.post('/api/simulations/report-glitch', (req, res) => {
