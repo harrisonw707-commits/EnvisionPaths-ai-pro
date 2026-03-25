@@ -215,7 +215,18 @@ const PORT = 3000;
   console.log('[SERVER] Ensuring admin user...');
   appendFileSync('server_init.log', `[${new Date().toISOString()}] Initializing test users...\n`);
   try {
-    db.prepare("UPDATE users SET is_admin = 1 WHERE email = 'harrisonw707@gmail.com'").run();
+    const adminEmail = 'harrisonw707@gmail.com';
+    const adminPassword = 'AdminPassword123!';
+    const hashedAdminPassword = bcryptjs.hashSync(adminPassword, 10);
+    
+    const existingAdmin = db.prepare('SELECT id FROM users WHERE email = ?').get(adminEmail);
+    if (!existingAdmin) {
+      db.prepare('INSERT INTO users (email, password, is_admin, plan_type) VALUES (?, ?, 1, "elite")').run(adminEmail, hashedAdminPassword);
+      console.log('[SERVER] Admin user created successfully');
+    } else {
+      db.prepare('UPDATE users SET is_admin = 1, password = ?, plan_type = "elite" WHERE email = ?').run(hashedAdminPassword, adminEmail);
+      console.log('[SERVER] Admin user updated successfully');
+    }
   } catch (e) {
     console.warn("[SERVER] Could not promote admin user:", e);
   }
@@ -408,9 +419,9 @@ const PORT = 3000;
         
         const fullUser = db.prepare('SELECT id, email, plan_type, is_admin FROM users WHERE id = ?').get(user.id) as any;
         
-        // Admins always get 'pro' plan access
+        // Admins always get 'elite' plan access
         if (fullUser && fullUser.is_admin) {
-          fullUser.plan_type = 'pro';
+          fullUser.plan_type = 'elite';
         }
         
         res.cookie('session_id', sessionId, { 
@@ -515,7 +526,7 @@ const PORT = 3000;
       success: true,
       user: {
         email,
-        plan_type: isAdmin ? 'pro' : 'free',
+        plan_type: isAdmin ? 'elite' : 'free',
         is_admin: isAdmin
       },
       sessionId
@@ -556,8 +567,8 @@ const PORT = 3000;
           db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
           res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
           
-          // Admins always get 'pro' plan access
-          const responsePlan = user.is_admin ? 'pro' : user.plan_type;
+          // Admins always get 'elite' plan access
+          const responsePlan = user.is_admin ? 'elite' : user.plan_type;
           return res.json({ success: true, user: { email: user.email, plan_type: responsePlan, is_admin: user.is_admin }, sessionId });
         }
       }
@@ -606,8 +617,8 @@ const PORT = 3000;
       db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
       res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
       
-      // Admins always get 'pro' plan access
-      const responsePlan = user.is_admin ? 'pro' : user.plan_type;
+      // Admins always get 'elite' plan access
+      const responsePlan = user.is_admin ? 'elite' : user.plan_type;
       res.json({ success: true, user: { email: user.email, plan_type: responsePlan, is_admin: user.is_admin }, sessionId });
     } else {
       res.status(401).json({ error: 'Invalid verification code' });
@@ -1308,16 +1319,31 @@ const PORT = 3000;
   });
 
 
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
 app.post('/api/ai/generate', async (req, res) => {
-  const apiKey = process.env.GEMINI_API_KEY;
+  try {
+    const apiKey = process.env.GEMINI_API_KEY;
 
-  if (!apiKey) {
-    return res.status(500).json({
-      error: "Gemini API Key is not configured on the server."
-    });
+    if (!apiKey) {
+      return res.status(500).json({
+        error: "Gemini API Key is not configured"
+      });
+    }
+
+    const { prompt } = req.body;
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+
+    res.json({ text });
+
+  } catch (error) {
+    res.status(500).json({ error: "AI generation failed" });
   }
-
-  res.json({ message: "Route is working" });
 });
 
   // Catch-all for unknown API routes to prevent falling through to SPA fallback
