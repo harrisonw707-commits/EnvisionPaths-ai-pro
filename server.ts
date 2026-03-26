@@ -504,11 +504,10 @@ const PORT = 3000;
 
       const genAI = new GoogleGenAI({ apiKey });
 
-      const result = await genAI.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-      });
-
+     const result = await genAI.models.generateContent({
+  model: "gemini-1.5-flash",
+  contents: prompt,
+});
       res.json({ text: result.text });
     } catch (err: any) {
       console.error("AI ERROR FULL:", err);
