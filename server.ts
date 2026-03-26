@@ -345,6 +345,12 @@ const PORT = 3000;
   // 2. Logging Middleware
   app.use((req, res, next) => {
     const start = Date.now();
+    
+    // Log EVERY request for debugging Cloud Run routing
+    if (req.path.startsWith('/api')) {
+      console.log(`[DEBUG] Incoming API Request: ${req.method} ${req.path}`);
+    }
+
     res.on('finish', () => {
       const duration = Date.now() - start;
       if (req.path.startsWith('/api')) {
@@ -477,9 +483,24 @@ const PORT = 3000;
     }
   });
 
+  // Debug: List all registered routes
+  app.get('/api/debug/routes', (req, res) => {
+    const routes: any[] = [];
+    app._router.stack.forEach((middleware: any) => {
+      if (middleware.route) {
+        routes.push({
+          path: middleware.route.path,
+          methods: Object.keys(middleware.route.methods).map(m => m.toUpperCase())
+        });
+      }
+    });
+    res.json({ routes });
+  });
+
   app.get("/api/debug/env", (req, res) => {
     res.json({
-      gemini: process.env.GEMINI_API_KEY ? "loaded" : "missing"
+      gemini: process.env.GEMINI_API_KEY ? "loaded" : "missing",
+      node_env: process.env.NODE_ENV
     });
   });
 
@@ -489,22 +510,39 @@ const PORT = 3000;
   });
 
  app.post("/api/ai/generate", async (req, res) => {
+  console.log(`[AI DEBUG] Received POST /api/ai/generate. Body:`, JSON.stringify(req.body));
   try {
     const { prompt } = req.body;
+    if (!prompt) {
+      console.warn('[AI DEBUG] Missing prompt in request body');
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
 
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error('[AI DEBUG] GEMINI_API_KEY is missing from environment');
+      return res.status(500).json({ error: 'AI service configuration error (API Key missing)' });
+    }
+
+    console.log('[AI DEBUG] Initializing GoogleGenAI...');
     const genAI = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
+      apiKey: apiKey,
     });
 
+    console.log('[AI DEBUG] Calling generateContent with prompt length:', prompt.length);
     const result = await genAI.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
     });
 
+    console.log('[AI DEBUG] AI Response successful. Text length:', result.text?.length || 0);
     res.json({ text: result.text });
   } catch (err: any) {
-    console.error("AI ERROR:", err);
-    res.status(500).json({ error: err.message });
+    console.error("[AI DEBUG] AI ERROR:", err);
+    res.status(500).json({ 
+      error: err.message,
+      details: process.env.NODE_ENV === 'production' ? undefined : err.stack
+    });
   }
 });
         
@@ -1349,7 +1387,12 @@ const PORT = 3000;
 
   // Catch-all for unknown API routes to prevent falling through to SPA fallback
   app.all('/api/*', (req, res) => {
-    res.status(404).json({ error: 'API route not found' });
+    console.log(`[404] API Route Not Found: ${req.method} ${req.path}`);
+    res.status(404).json({ 
+      error: 'API route not found',
+      path: req.path,
+      method: req.method
+    });
   });
 
   if (process.env.NODE_ENV !== 'production') {
@@ -1395,7 +1438,12 @@ const PORT = 3000;
   });
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`[SERVER] Running on http://localhost:${PORT}`);
+    console.log(`[SERVER] NODE_ENV: ${process.env.NODE_ENV}`);
+    console.log(`[SERVER] GEMINI_API_KEY present: ${!!process.env.GEMINI_API_KEY}`);
+    if (process.env.GEMINI_API_KEY) {
+      console.log(`[SERVER] GEMINI_API_KEY prefix: ${process.env.GEMINI_API_KEY.substring(0, 4)}...`);
+    }
   });
 }
 
