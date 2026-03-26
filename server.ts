@@ -1319,33 +1319,6 @@ const PORT = 3000;
   });
 
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-app.post('/api/ai/generate', async (req, res) => {
-  try {
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      return res.status(500).json({
-        error: "Gemini API Key is not configured"
-      });
-    }
-
-    const { prompt } = req.body;
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-
-    res.json({ text });
-
-  } catch (error) {
-    res.status(500).json({ error: "AI generation failed" });
-  }
-});
-
   // Catch-all for unknown API routes to prevent falling through to SPA fallback
   app.all('/api/*', (req, res) => {
     res.status(404).json({ error: 'API route not found' });
