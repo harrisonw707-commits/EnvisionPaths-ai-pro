@@ -1,3 +1,4 @@
+console.log("SERVER FILE IS RUNNING");
 import express from 'express';
 import { GoogleGenAI } from "@google/genai";
 import path from 'path';
@@ -483,41 +484,30 @@ const PORT = 3000;
   });
 
   // AI Proxy Routes
-  app.post("/api/ai/generate", async (req, res) => {
-    try {
-      const { prompt } = req.body;
-
-      const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
-      
-      console.log("KEY DIAGNOSTIC:", {
-        hasGeminiKey: !!process.env.GEMINI_API_KEY,
-        hasApiKey: !!process.env.API_KEY,
-        envKeys: Object.keys(process.env).filter(k => k.includes('KEY') || k.includes('GEMINI'))
-      });
-
-      if (!apiKey) {
-        return res.status(500).json({ 
-          error: "No API Key found on server. Please ensure GEMINI_API_KEY is set in Secrets and the server has been restarted.",
-          envKeys: Object.keys(process.env).filter(k => k.includes('KEY'))
-        });
-      }
-
-      const genAI = new GoogleGenAI({ apiKey });
-
-     const result = await genAI.models.generateContent({
-  model: "gemini-1.5-flash",
-  contents: prompt,
-});
-      res.json({ text: result.text });
-    } catch (err: any) {
-      console.error("AI ERROR FULL:", err);
-
-      res.status(500).json({
-        error: err.message,
-        stack: err.stack,
-      });
-    }
+  app.get("/api/ai/generate", (req, res) => {
+    res.json({ message: "AI Generate endpoint is active. Use POST to send prompts." });
   });
+
+ app.post("/api/ai/generate", async (req, res) => {
+  try {
+    const { prompt } = req.body;
+
+    const genAI = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+    });
+
+    const result = await genAI.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+    });
+
+    res.json({ text: result.text });
+  } catch (err: any) {
+    console.error("AI ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+        
 
   // Auth Middleware
   // (getSessionUser is defined at the top of startServer scope)
