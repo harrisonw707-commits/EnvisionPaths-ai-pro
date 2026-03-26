@@ -1,4 +1,4 @@
-import { generateContent, streamContent } from './aiService';
+import { generateContent } from './aiService';
 
 export interface CoachOptions {
   jobTitle: string;
@@ -39,7 +39,8 @@ export async function getCoachResponse(
   options: CoachOptions
 ) {
   const systemInstruction = getCoachSystemInstruction(options);
-  const response = await generateContent(message, systemInstruction, history);
+  const prompt = `System: ${systemInstruction}\n\nHistory: ${JSON.stringify(history)}\n\nUser: ${message}`;
+  const response = await generateContent(prompt);
   return response.text;
 }
 
@@ -52,8 +53,9 @@ export async function streamCoachResponse(
   history: any[],
   options: CoachOptions
 ) {
-  const systemInstruction = getCoachSystemInstruction(options);
-  return await streamContent(message, onChunk, systemInstruction, history);
+  const response = await getCoachResponse(message, history, options);
+  onChunk(response);
+  return response;
 }
 
 /**

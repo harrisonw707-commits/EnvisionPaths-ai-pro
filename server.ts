@@ -1,4 +1,5 @@
 import express from 'express';
+import { GoogleGenAI } from "@google/genai";
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Database from 'better-sqlite3';
@@ -204,7 +205,7 @@ async function startServer() {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-session-id']
   }));
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json());
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
 
@@ -479,6 +480,44 @@ const PORT = 3000;
     res.json({
       gemini: process.env.GEMINI_API_KEY ? "loaded" : "missing"
     });
+  });
+
+  // AI Proxy Routes
+  app.post("/api/ai/generate", async (req, res) => {
+    try {
+      const { prompt } = req.body;
+
+      const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+      
+      console.log("KEY DIAGNOSTIC:", {
+        hasGeminiKey: !!process.env.GEMINI_API_KEY,
+        hasApiKey: !!process.env.API_KEY,
+        envKeys: Object.keys(process.env).filter(k => k.includes('KEY') || k.includes('GEMINI'))
+      });
+
+      if (!apiKey) {
+        return res.status(500).json({ 
+          error: "No API Key found on server. Please ensure GEMINI_API_KEY is set in Secrets and the server has been restarted.",
+          envKeys: Object.keys(process.env).filter(k => k.includes('KEY'))
+        });
+      }
+
+      const genAI = new GoogleGenAI({ apiKey });
+
+      const result = await genAI.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+      });
+
+      res.json({ text: result.text });
+    } catch (err: any) {
+      console.error("AI ERROR FULL:", err);
+
+      res.status(500).json({
+        error: err.message,
+        stack: err.stack,
+      });
+    }
   });
 
   // Auth Middleware
@@ -1329,23 +1368,26 @@ const PORT = 3000;
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
+      define: {
+        'import.meta.env.VITE_API_URL': JSON.stringify('') // Default to empty for relative paths
+      }
     });
 
-  app.use((req, res, next) => {
-    if (req.path.startsWith('/api')) return next();
-    vite.middlewares.handle(req, res, next);
-  });
+    app.use(vite.middlewares);
 
-  app.get('(.*)', async (req, res, next) => {
-    if (req.url.startsWith('/api')) return next();
-    try {
-      const html = await vite.transformIndexHtml(req.url, 'index.html');
-      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
-    } catch (e) {
-      vite.ssrFixStacktrace(e as Error);
-      next(e);
-    }
-  });
+    app.get('(.*)', async (req, res, next) => {
+      // Skip Vite for API routes - be robust with leading slashes
+      if (req.path.startsWith('/api') || req.path.includes('/api/')) {
+        return next();
+      }
+      try {
+        const html = await vite.transformIndexHtml(req.url, 'index.html');
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+      } catch (e) {
+        vite.ssrFixStacktrace(e as Error);
+        next(e);
+      }
+    });
   } else {
     const distDir = path.join(process.cwd(), 'dist');
     app.use(express.static(distDir));
