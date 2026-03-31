@@ -6,13 +6,10 @@
       "type": "object",
       "properties": {
         "email": { "type": "string", "format": "email" },
-        "plan_type": { "type": "string", "enum": ["free", "beginner", "pro", "elite"] },
-        "plan_start_date": { "type": "string", "format": "date-time" },
-        "stripe_customer_id": { "type": "string" },
         "is_admin": { "type": "boolean" },
         "created_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["email", "plan_type", "created_at"]
+      "required": ["email", "created_at"]
     },
     "Simulation": {
       "title": "Simulation",

@@ -2,22 +2,21 @@ import { generateContent } from './aiService';
 
 export interface CoachOptions {
   jobTitle: string;
-  isFree: boolean;
-  isPro: boolean;
   questionsAsked: number;
   interviewLength: number;
+  isFree?: boolean;
+  isPro?: boolean;
 }
 
 /**
  * Generates the system instruction for the interview coach.
  */
 export function getCoachSystemInstruction(options: CoachOptions): string {
-  const { jobTitle, isFree, isPro, questionsAsked, interviewLength } = options;
+  const { jobTitle, questionsAsked, interviewLength, isFree, isPro } = options;
   
   return `You are an expert career coach. 
 Conduct a realistic interview for a ${jobTitle} role. 
-${isFree ? 'This is a free trial session, so keep the interview concise (max 5 questions total).' : ''}
-${isPro ? 'Provide deep behavioral and technical analysis in your feedback. Focus on high-level strategic answers.' : 'Focus on standard interview questions.'}
+Focus on standard interview questions.
 After the user answers a question, briefly acknowledge their answer with a "Coach's Tip" (in italics) 
 and then move on to the next insightful interview question. 
 Focus on behavioral, technical, and situational questions.
@@ -74,15 +73,13 @@ Keep your tone professional, encouraging, and insightful.`;
 /**
  * Generates a performance report based on the interview transcript.
  */
-export async function getPerformanceReport(transcript: string, jobTitle: string, isFree: boolean) {
+export async function getPerformanceReport(transcript: string, jobTitle: string) {
   const prompt = `You are an expert career coach. Analyze the following interview transcript for a ${jobTitle} role. 
-${isFree ? 'Provide a brief, standard summary including a score and 2 key points.' : 'Provide a comprehensive, advanced performance analysis including:'}
-${!isFree ? `
+Provide a comprehensive, advanced performance analysis including:
 1. Overall Performance Score (out of 10)
 2. Key Strengths (3 points)
 3. Areas for Improvement (3 points)
 4. A final encouraging "Roadmap to Success" for this candidate.
-` : ''}
 
 Format the response clearly with headings.
 

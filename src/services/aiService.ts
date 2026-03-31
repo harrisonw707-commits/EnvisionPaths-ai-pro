@@ -1,5 +1,7 @@
+import { API_URL } from '../config';
+
 export async function generateContent(prompt: string) {
-  const res = await fetch("https://envisionpaths-ai-pro-36560900479.us-west1.run.app/api/ai/generate", {
+  const res = await fetch(`${API_URL}/api/ai/generate`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

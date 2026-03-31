@@ -9,9 +9,6 @@ service cloud.firestore {
     // Document ID: {userId}
     // Fields:
     //   - email: string (required, email format)
-    //   - plan_type: string (required, enum: free, beginner, pro, elite)
-    //   - plan_start_date: timestamp (optional)
-    //   - stripe_customer_id: string (optional)
     //   - is_admin: bool (optional)
     //   - created_at: timestamp (required)
     //
@@ -81,10 +78,9 @@ service cloud.firestore {
     // ===============================================================
 
     function isValidUser(data) {
-      return hasRequiredFields(['email', 'plan_type', 'created_at']) &&
-             hasOnlyAllowedFields(['email', 'plan_type', 'plan_start_date', 'stripe_customer_id', 'is_admin', 'created_at']) &&
+      return hasRequiredFields(['email', 'created_at']) &&
+             hasOnlyAllowedFields(['email', 'is_admin', 'created_at']) &&
              isValidEmail(data.email) &&
-             data.plan_type in ['free', 'beginner', 'pro', 'elite'] &&
              data.created_at is timestamp;
     }
 
