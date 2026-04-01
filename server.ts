@@ -12,6 +12,9 @@ import { appendFileSync } from 'node:fs';
 
 appendFileSync('server_init.log', `[${new Date().toISOString()}] Server file loaded\n`);
 import QRCode from 'qrcode';
+import Stripe from 'stripe';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
 
 /**
  * EnvisionPaths Server Entry Point
@@ -71,7 +74,19 @@ try {
     email TEXT UNIQUE,
     password TEXT,
     is_admin BOOLEAN DEFAULT 0,
+    plan_type TEXT DEFAULT 'Free',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS processed_payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    stripe_session_id TEXT UNIQUE,
+    amount INTEGER,
+    currency TEXT,
+    status TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
   );
 
   CREATE TABLE IF NOT EXISTS simulations (
@@ -149,7 +164,9 @@ const migrations = [
   "ALTER TABLE simulations ADD COLUMN status TEXT DEFAULT 'completed'",
   "CREATE INDEX IF NOT EXISTS idx_simulations_user_id ON simulations(user_id)",
   "ALTER TABLE users ADD COLUMN email_verification_code TEXT",
-  "ALTER TABLE users ADD COLUMN email_verification_expiry DATETIME"
+  "ALTER TABLE users ADD COLUMN email_verification_expiry DATETIME",
+  "ALTER TABLE users ADD COLUMN plan_type TEXT DEFAULT 'Free'",
+  "CREATE TABLE IF NOT EXISTS processed_payments (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, stripe_session_id TEXT UNIQUE, amount INTEGER, currency TEXT, status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(user_id) REFERENCES users(id))"
 ];
 
 for (const migration of migrations) {
@@ -195,10 +212,10 @@ const PORT = 3000;
     
     const existingAdmin = db.prepare('SELECT id FROM users WHERE email = ?').get(adminEmail);
     if (!existingAdmin) {
-      db.prepare('INSERT INTO users (email, password, is_admin) VALUES (?, ?, 1)').run(adminEmail, hashedAdminPassword);
+      db.prepare('INSERT INTO users (email, password, is_admin, plan_type) VALUES (?, ?, 1, "elite")').run(adminEmail, hashedAdminPassword);
       console.log('[SERVER] Admin user created successfully');
     } else {
-      db.prepare('UPDATE users SET is_admin = 1, password = ? WHERE email = ?').run(hashedAdminPassword, adminEmail);
+      db.prepare('UPDATE users SET is_admin = 1, password = ?, plan_type = "elite" WHERE email = ?').run(hashedAdminPassword, adminEmail);
       console.log('[SERVER] Admin user updated successfully');
     }
   } catch (e) {
@@ -217,11 +234,11 @@ const PORT = 3000;
     
     const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(testEmail);
     if (!existingUser) {
-      db.prepare('INSERT INTO users (email, password, is_admin) VALUES (?, ?, 0)').run(testEmail, hashedPassword);
+      db.prepare('INSERT INTO users (email, password, is_admin, plan_type) VALUES (?, ?, 0, "Free")').run(testEmail, hashedPassword);
       console.log('[SERVER] Standard test user created successfully');
     } else {
       // Ensure password is correct even if user exists
-      db.prepare('UPDATE users SET password = ?, two_factor_enabled = 0 WHERE email = ?').run(hashedPassword, testEmail);
+      db.prepare('UPDATE users SET password = ?, two_factor_enabled = 0, plan_type = "Free" WHERE email = ?').run(hashedPassword, testEmail);
       console.log('[SERVER] Standard test user updated successfully');
     }
   } catch (e) {
@@ -240,10 +257,10 @@ const PORT = 3000;
     
     const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(vertexEmail);
     if (!existingUser) {
-      db.prepare('INSERT INTO users (email, password, is_admin) VALUES (?, ?, 0)').run(vertexEmail, hashedPassword);
+      db.prepare('INSERT INTO users (email, password, is_admin, plan_type) VALUES (?, ?, 0, "pro")').run(vertexEmail, hashedPassword);
       console.log('[SERVER] Premium AI test user created successfully');
     } else {
-      db.prepare('UPDATE users SET password = ?, two_factor_enabled = 0 WHERE email = ?').run(hashedPassword, vertexEmail);
+      db.prepare('UPDATE users SET password = ?, two_factor_enabled = 0, plan_type = "pro" WHERE email = ?').run(hashedPassword, vertexEmail);
       console.log('[SERVER] Premium AI test user updated successfully');
     }
   } catch (e) {
@@ -287,7 +304,7 @@ const PORT = 3000;
       }
 
       const user = db.prepare(`
-        SELECT id, email, is_admin 
+        SELECT id, email, is_admin, plan_type 
         FROM users 
         WHERE id = ?
       `).get(session.user_id) as any;
@@ -300,6 +317,7 @@ const PORT = 3000;
       // Force admin for specific email
       if (user.email === 'harrisonw707@gmail.com') {
         user.is_admin = 1;
+        user.plan_type = 'elite';
       }
 
       return user;
@@ -382,17 +400,17 @@ const PORT = 3000;
         let user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as any;
         if (!user) {
           console.log('[API] Creating new admin user');
-          const result = db.prepare('INSERT INTO users (email, is_admin) VALUES (?, 1)').run(email);
+          const result = db.prepare('INSERT INTO users (email, is_admin, plan_type) VALUES (?, 1, "elite")').run(email);
           user = { id: Number(result.lastInsertRowid) };
         } else {
-          db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
+          db.prepare('UPDATE users SET is_admin = 1, plan_type = "elite" WHERE id = ?').run(user.id);
         }
 
         const sessionId = 'admin_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
         console.log(`[API] Creating session: ${sessionId}`);
         db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
         
-        const fullUser = db.prepare('SELECT id, email, is_admin FROM users WHERE id = ?').get(user.id) as any;
+        const fullUser = db.prepare('SELECT id, email, is_admin, plan_type FROM users WHERE id = ?').get(user.id) as any;
         
         res.cookie('session_id', sessionId, { 
           httpOnly: true, 
@@ -470,12 +488,11 @@ const PORT = 3000;
   app.get("/api/ai/generate", (req, res) => {
     res.json({ message: "AI Generate endpoint is active. Use POST to send prompts." });
   });
-
- app.post("/api/ai/generate", async (req, res) => {
+app.post("/api/ai/generate", async (req, res) => {
   console.log(`[AI DEBUG] Received POST /api/ai/generate. Body:`, JSON.stringify(req.body));
   try {
     const { prompt } = req.body;
-    if (!prompt) {
+    if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
       console.warn('[AI DEBUG] Missing prompt in request body');
       return res.status(400).json({ error: 'Prompt is required' });
     }
@@ -483,31 +500,52 @@ const PORT = 3000;
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       console.error('[AI DEBUG] GEMINI_API_KEY is missing from environment');
-      return res.status(500).json({ error: 'AI service configuration error (API Key missing)' });
+      return res.status(500).json({ error: 'AI service configuration error (API key missing)' });
     }
 
     console.log('[AI DEBUG] Initializing GoogleGenAI...');
-    const genAI = new GoogleGenAI({
-      apiKey: apiKey,
-    });
+    const genAI = new GoogleGenAI({ apiKey });
+    const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
 
-    console.log('[AI DEBUG] Calling generateContent with prompt length:', prompt.length);
-    const result = await genAI.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-    });
+    let responseText = '';
+    let selectedModel = '';
+    let lastError: any;
 
-    console.log('[AI DEBUG] AI Response successful. Text length:', result.text?.length || 0);
-    res.json({ text: result.text });
+    for (const model of candidateModels) {
+      try {
+        console.log(`[AI DEBUG] Trying model: ${model}`);
+        const result = await genAI.models.generateContent({
+          model,
+          contents: [{ role: "user", parts: [{ text: prompt.trim() }] }],
+        });
+
+        responseText = (result.text || '').trim();
+        if (responseText) {
+          selectedModel = model;
+          break;
+        }
+
+        throw new Error(`Model ${model} returned an empty response`);
+      } catch (modelError: any) {
+        lastError = modelError;
+        console.warn(`[AI DEBUG] Model failed: ${model}`, modelError?.message || modelError);
+      }
+    }
+
+    if (!responseText) {
+      throw lastError || new Error('No AI model produced a valid response');
+    }
+
+    console.log(`[AI DEBUG] AI response successful with ${selectedModel}. Text length:`, responseText.length);
+    res.json({ text: responseText, model: selectedModel });
   } catch (err: any) {
     console.error("[AI DEBUG] AI ERROR:", err);
-    res.status(500).json({ 
-      error: err.message,
-      details: process.env.NODE_ENV === 'production' ? undefined : err.stack
+    res.status(500).json({
+      error: 'AI request failed',
+      details: process.env.NODE_ENV === 'production' ? undefined : (err?.message || err),
     });
   }
-});
-        
+});    
 
   // Auth Middleware
   // (getSessionUser is defined at the top of startServer scope)
@@ -525,7 +563,7 @@ const PORT = 3000;
     let userId: number | bigint;
 
     try {
-      const result = db.prepare('INSERT INTO users (email, password) VALUES (?, ?)').run(email, hashedPassword);
+      const result = db.prepare('INSERT INTO users (email, password, plan_type) VALUES (?, ?, "Free")').run(email, hashedPassword);
       userId = result.lastInsertRowid;
     } catch (e: any) {
       if (e.message.includes('UNIQUE')) {
@@ -543,8 +581,10 @@ const PORT = 3000;
 
     const isAdmin = email === 'harrisonw707@gmail.com';
     if (isAdmin) {
-      db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(userId);
+      db.prepare('UPDATE users SET is_admin = 1, plan_type = "elite" WHERE id = ?').run(userId);
     }
+
+    const planType = isAdmin ? 'elite' : 'Free';
 
     const sessionId = Math.random().toString(36).substring(2);
     db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, userId);
@@ -554,7 +594,8 @@ const PORT = 3000;
       success: true,
       user: {
         email,
-        is_admin: isAdmin
+        is_admin: isAdmin,
+        plan_type: planType
       },
       sessionId
     });
@@ -572,7 +613,7 @@ const PORT = 3000;
         return res.status(400).json({ error: 'Email and password are required' });
       }
 
-      const user = db.prepare('SELECT id, email, password, is_admin, two_factor_enabled, two_factor_secret FROM users WHERE email = ?').get(email) as any;
+      const user = db.prepare('SELECT id, email, password, is_admin, plan_type, two_factor_enabled, two_factor_secret FROM users WHERE email = ?').get(email) as any;
       
       if (user && user.password) {
         console.log(`[LOGIN] User found: ${email}, comparing password...`);
@@ -1026,6 +1067,98 @@ const PORT = 3000;
   });
 
   // Stripe Checkout Session Creation
+  app.post('/api/stripe/create-checkout-session', async (req, res) => {
+    const user = getSessionUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { planType } = req.body;
+    if (!planType) return res.status(400).json({ error: 'Plan type is required' });
+
+    try {
+      let priceId = '';
+      if (planType === 'pro') {
+        priceId = process.env.STRIPE_PRO_PRICE_ID || 'price_1Qv83mI6u7gcyhy4gmmv6_pro';
+      } else if (planType === 'elite') {
+        priceId = process.env.STRIPE_ELITE_PRICE_ID || 'price_1Qv83mI6u7gcyhy4gmmv6_elite';
+      } else {
+        return res.status(400).json({ error: 'Invalid plan type' });
+      }
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
+        mode: 'subscription',
+        success_url: `${process.env.APP_URL || 'http://localhost:3000'}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.APP_URL || 'http://localhost:3000'}/pricing`,
+        client_reference_id: user.id.toString(),
+        customer_email: user.email,
+        metadata: {
+          userId: user.id.toString(),
+          planType: planType
+        }
+      });
+
+      res.json({ id: session.id, url: session.url });
+    } catch (e: any) {
+      console.error('[STRIPE ERROR]', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get('/api/stripe/session-status', async (req, res) => {
+    const sessionId = req.query.session_id as string;
+    if (!sessionId) return res.status(400).json({ error: 'Session ID is required' });
+
+    try {
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      if (session.payment_status === 'paid') {
+        const userId = session.metadata?.userId;
+        const planType = session.metadata?.planType;
+
+        if (userId && planType) {
+          // Check if already processed
+          const existing = db.prepare('SELECT id FROM processed_payments WHERE stripe_session_id = ?').get(sessionId);
+          if (!existing) {
+            db.prepare('INSERT INTO processed_payments (user_id, stripe_session_id, amount, currency, status) VALUES (?, ?, ?, ?, ?)').run(
+              userId,
+              sessionId,
+              session.amount_total,
+              session.currency,
+              session.status
+            );
+            db.prepare('UPDATE users SET plan_type = ? WHERE id = ?').run(planType, userId);
+            console.log(`[STRIPE] Payment processed for user ${userId}, plan updated to ${planType}`);
+          }
+        }
+      }
+      res.json({ status: session.status, payment_status: session.payment_status });
+    } catch (e: any) {
+      console.error('[STRIPE STATUS ERROR]', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Update User Plan
+  app.post('/api/admin/update-user-plan', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user || !user.is_admin) return res.status(403).json({ error: 'Forbidden' });
+
+    const { userId, planType } = req.body;
+    if (!userId || !planType) return res.status(400).json({ error: 'User ID and Plan Type are required' });
+
+    try {
+      db.prepare('UPDATE users SET plan_type = ? WHERE id = ?').run(planType, userId);
+      console.log(`[ADMIN] User ${userId} plan updated to ${planType} by admin ${user.id}`);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
   // Reminders API
   app.get("/api/reminders", (req, res) => {
     const user = getSessionUser(req);
