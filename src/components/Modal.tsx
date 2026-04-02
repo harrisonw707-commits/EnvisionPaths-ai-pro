@@ -1,4 +1,5 @@
-import React, { useId } from 'react';
+import React from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -8,47 +9,41 @@ interface ModalProps {
   children: React.ReactNode;
 }
 
-export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
-  const titleId = useId();
-
-  if (!isOpen) return null;
-
+const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
   return (
-    <div 
-      className="fixed inset-0 z-[999] flex items-center justify-center p-4 sm:p-6"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-    >
-      <div 
-        onClick={onClose}
-        className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-      />
-      <div
-        className="relative w-full max-w-2xl bg-theme-surface border border-theme rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
-      >
-        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-theme">
-          <h2 id={titleId} className="text-lg sm:text-2xl font-black uppercase italic tracking-tighter text-theme-primary truncate pr-4">{title}</h2>
-          <button 
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             onClick={onClose}
-            aria-label="Close modal"
-            className="p-2 hover:bg-theme-surface-hover rounded-full transition-colors text-theme-secondary hover:text-theme-primary"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            className="relative w-full max-w-2xl bg-theme-surface border border-theme rounded-3xl shadow-2xl overflow-hidden"
           >
-            <X size={24} />
-          </button>
+            <div className="flex items-center justify-between p-6 border-b border-theme">
+              <h2 className="text-xl font-black uppercase italic text-theme-primary tracking-tight">{title}</h2>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-theme-surface-hover rounded-xl transition-colors text-theme-secondary hover:text-theme-primary"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+              {children}
+            </div>
+          </motion.div>
         </div>
-        <div className="p-4 sm:p-8 overflow-y-auto custom-scrollbar">
-          {children}
-        </div>
-        <div className="p-6 border-t border-theme flex justify-end">
-          <button 
-            onClick={onClose}
-            className="px-8 py-3 bg-theme-surface-hover hover:opacity-80 text-theme-primary font-black uppercase tracking-widest rounded-xl transition-all border border-theme"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+      )}
+    </AnimatePresence>
   );
 };
+
+export default Modal;
