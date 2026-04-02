@@ -208,7 +208,8 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
 
-const PORT = 3000;
+// Use the port provided by the environment (e.g., Cloud Run uses 8080) or default to 3000 for AI Studio
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   console.log(`[SERVER] Using PORT=${PORT}`);
 
   // Ensure harrisonw707@gmail.com is an admin
@@ -1331,7 +1332,7 @@ const PORT = 3000;
     vite.middlewares.handle(req, res, next);
   });
 
-  app.get('(.*)', async (req, res, next) => {
+  app.get('*', async (req, res, next) => {
     if (req.url.startsWith('/api')) return next();
     try {
       const html = await vite.transformIndexHtml(req.url, 'index.html');
@@ -1344,7 +1345,7 @@ const PORT = 3000;
   } else {
     const distDir = path.join(process.cwd(), 'dist');
     app.use(express.static(distDir));
-    app.get('(.*)', (req, res) => {
+    app.get('*', (req, res) => {
       res.sendFile(path.join(distDir, 'index.html'));
     });
   }

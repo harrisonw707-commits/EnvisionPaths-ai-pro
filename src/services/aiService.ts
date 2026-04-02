@@ -7,7 +7,13 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+function getAi() {
+  const key = process.env.GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
+  if (!key) {
+    throw new Error("GEMINI_API_KEY is not set. Please check your environment configuration.");
+  }
+  return new GoogleGenAI({ apiKey: key });
+}
 
 export interface AIResponse {
   text: string;
@@ -15,6 +21,7 @@ export interface AIResponse {
 
 export async function generateAI(prompt: string): Promise<AIResponse> {
   try {
+    const ai = getAi();
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: prompt,
@@ -33,6 +40,7 @@ export async function generateAI(prompt: string): Promise<AIResponse> {
 
 export async function generateContent(messageText: string, systemInstruction: string, history: any[]): Promise<AIResponse> {
   try {
+    const ai = getAi();
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: [
@@ -57,6 +65,7 @@ export async function generateContent(messageText: string, systemInstruction: st
 
 export async function generateSpeech(text: string): Promise<string | null> {
   try {
+    const ai = getAi();
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text: `Say cheerfully: ${text}` }] }],
