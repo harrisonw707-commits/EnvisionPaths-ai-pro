@@ -208,8 +208,8 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
 
-// Use the port provided by the environment (e.g., Cloud Run uses 8080) or default to 3000 for AI Studio
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+// Use the port provided by the environment (e.g., Cloud Run uses 8080)
+const PORT = process.env.PORT || 8080; 
   console.log(`[SERVER] Using PORT=${PORT}`);
 
   // Ensure harrisonw707@gmail.com is an admin
