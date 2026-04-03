@@ -1,5 +1,5 @@
 {
-  "name": "envision-paths",
+  "name": "envisionpaths-ai-pro",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -46,7 +46,7 @@
     "esbuild": "^0.27.4",
     "postcss": "^8.4.45",
     "tailwindcss": "^4.2.1",
-    "tsx": "^4.19.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.5.3",
     "vite": "^5.4.2"
   }

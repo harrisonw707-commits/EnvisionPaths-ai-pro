@@ -1,4 +1,4 @@
-import { generateContent } from './aiService';
+import { generateAI } from './aiService';
 
 export interface CoachOptions {
   jobTitle: string;
@@ -39,7 +39,7 @@ export async function getCoachResponse(
 ) {
   const systemInstruction = getCoachSystemInstruction(options);
   const prompt = `System: ${systemInstruction}\n\nHistory: ${JSON.stringify(history)}\n\nUser: ${message}`;
-  const response = await generateContent(prompt);
+  const response = await generateAI(prompt);
   return response.text;
 }
 
@@ -66,7 +66,7 @@ I am applying for the position of ${jobTitle} in the ${industry} industry.
 Please start the interview by saying exactly: "Welcome, thanks for coming in!" followed by a brief introduction and your first interview question: "Tell me about yourself."
 Keep your tone professional, encouraging, and insightful.`;
   
-  const response = await generateContent(prompt);
+  const response = await generateAI(prompt);
   return response.text;
 }
 
@@ -86,6 +86,6 @@ Format the response clearly with headings.
 Interview Transcript:
 ${transcript}`;
 
-  const response = await generateContent(prompt);
+  const response = await generateAI(prompt);
   return response.text;
 }

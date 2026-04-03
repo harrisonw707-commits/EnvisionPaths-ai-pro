@@ -18,7 +18,7 @@ RUN npm ci --omit=dev
 FROM node:18-alpine AS run
 WORKDIR /app
 ENV NODE_ENV=production
-ENV PORT=8080
+
 RUN apk add --no-cache libc6-compat
 
 # Copy production dependencies
@@ -30,5 +30,6 @@ COPY --from=build /app/dist ./dist
 # Copy public folder if it exists (for static assets not handled by vite)
 COPY --from=build /app/public ./public
 
-EXPOSE 8080
+# Cloud Run injects PORT, so we don't hardcode it.
+# We also use npm start for production.
 CMD ["npm", "start"]

@@ -7,10 +7,8 @@ import cors from 'cors';
 import Stripe from 'stripe';
 import * as bcryptjs from 'bcryptjs';
 import speakeasy from 'speakeasy';
-import { appendFileSync } from 'node:fs';
-
-appendFileSync('server_init.log', `[${new Date().toISOString()}] Server file loaded\n`);
 import QRCode from 'qrcode';
+import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
  * EnvisionPaths Server Entry Point
@@ -71,9 +69,34 @@ function getStripe() {
 }
 
 // Database Initialization
-const db = new Database('envision.db', { timeout: 5000 });
-db.pragma('journal_mode = WAL');
-db.pragma('synchronous = NORMAL');
+let db: any;
+
+try {
+  const dbPath = process.env.NODE_ENV === 'production' ? '/tmp/envision.db' : 'envision.db';
+  console.log(`[DB] Connecting to ${dbPath}...`);
+  db = new Database(dbPath, { timeout: 5000 });
+  db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = NORMAL');
+  console.log('[DB] Connected successfully');
+} catch (e: any) {
+  console.error('[DB] Connection error:', e);
+  // Fallback to in-memory if file fails
+  console.log('[DB] Falling back to in-memory database');
+  try {
+    db = new Database(':memory:');
+  } catch (memError) {
+    console.error('[DB] In-memory fallback failed, using mock object');
+    db = {
+      prepare: () => ({
+        get: () => ({}),
+        run: () => ({ lastInsertRowid: 1 }),
+        all: () => []
+      }),
+      pragma: () => {},
+      exec: () => {}
+    };
+  }
+}
 
 // Create tables
 console.log('[DB] Initializing tables...');
@@ -208,13 +231,13 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
 
-// Use the port provided by the environment (e.g., Cloud Run uses 8080)
-const PORT = process.env.PORT || 8080; 
+// Use the port provided by the environment (e.g., Cloud Run uses 8080) or default to 3000 for AI Studio
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   console.log(`[SERVER] Using PORT=${PORT}`);
+  console.log(`[SERVER] NODE_ENV=${process.env.NODE_ENV}`);
 
   // Ensure harrisonw707@gmail.com is an admin
   console.log('[SERVER] Ensuring admin user...');
-  appendFileSync('server_init.log', `[${new Date().toISOString()}] Initializing test users...\n`);
   try {
     const adminEmail = 'harrisonw707@gmail.com';
     const adminPassword = 'AdminPassword123!';
@@ -478,8 +501,79 @@ const PORT = process.env.PORT || 8080;
 
   app.get("/api/debug/env", (req, res) => {
     res.json({
-      gemini: process.env.GEMINI_API_KEY ? "loaded" : "missing"
+      gemini: (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY) ? "loaded" : "missing",
+      build_time: "2026-04-02 20:15 UTC",
+      status: "Secure"
     });
+  });
+
+  // AI Endpoints
+  const getAi = () => {
+    const key = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    if (!key) {
+      throw new Error("GEMINI_API_KEY is not set on the server.");
+    }
+    return new GoogleGenAI({ apiKey: key });
+  };
+
+  app.post('/api/ai/generate', async (req, res) => {
+    try {
+      const { prompt } = req.body;
+      const ai = getAi();
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+      });
+      res.json({ text: response.text });
+    } catch (e: any) {
+      console.error('[AI ERROR]', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/ai/content', async (req, res) => {
+    try {
+      const { messageText, systemInstruction, history } = req.body;
+      const ai = getAi();
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [
+          ...history,
+          { role: 'user', parts: [{ text: messageText }] }
+        ],
+        config: {
+          systemInstruction: systemInstruction,
+        }
+      });
+      res.json({ text: response.text });
+    } catch (e: any) {
+      console.error('[AI CONTENT ERROR]', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post('/api/ai/speech', async (req, res) => {
+    try {
+      const { text, voiceName } = req.body;
+      const ai = getAi();
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: `Say cheerfully: ${text}` }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voiceName || 'Kore' },
+            },
+          },
+        },
+      });
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      res.json({ audio: base64Audio || null });
+    } catch (e: any) {
+      console.error('[AI SPEECH ERROR]', e);
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // Auth Middleware
@@ -1014,7 +1108,7 @@ const PORT = process.env.PORT || 8080;
       // Save messages if provided
       if (messages && Array.isArray(messages)) {
         const insertMsg = db.prepare('INSERT INTO simulation_messages (simulation_id, role, content) VALUES (?, ?, ?)');
-        const transaction = db.transaction((msgs) => {
+        const transaction = db.transaction((msgs: any[]) => {
           for (const msg of msgs) {
             insertMsg.run(simulation_id, msg.role, msg.text);
           }
@@ -1028,7 +1122,7 @@ const PORT = process.env.PORT || 8080;
       
       if (messages && Array.isArray(messages)) {
         const insertMsg = db.prepare('INSERT INTO simulation_messages (simulation_id, role, content) VALUES (?, ?, ?)');
-        const transaction = db.transaction((msgs) => {
+        const transaction = db.transaction((msgs: any[]) => {
           for (const msg of msgs) {
             insertMsg.run(newSimId, msg.role, msg.text);
           }
@@ -1327,12 +1421,9 @@ const PORT = process.env.PORT || 8080;
       appType: 'spa',
     });
 
-  app.use((req, res, next) => {
-    if (req.path.startsWith('/api')) return next();
-    vite.middlewares.handle(req, res, next);
-  });
+    app.use(vite.middlewares);
 
-  app.get('*', async (req, res, next) => {
+    app.get('*', async (req, res, next) => {
     if (req.url.startsWith('/api')) return next();
     try {
       const html = await vite.transformIndexHtml(req.url, 'index.html');

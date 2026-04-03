@@ -131,6 +131,7 @@ const VoiceVisualizer = () => (
 
 export default function App() {
   const [step, setStep] = useState<AppStep>('auth');
+  const [selectedVoice, setSelectedVoice] = useState<'Kore' | 'Zephyr'>('Kore');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
   const [selectedPlan, setSelectedPlan] = useState<'free' | 'beginner' | 'pro' | 'elite' | null>(null);
   const [sessionsUsed, setSessionsUsed] = useState(0);
@@ -1697,7 +1698,7 @@ ${conversation}`;
     if (!force && interactionMode !== 'voice' && !isAudioEnabled) return;
     
     try {
-      const audio = await generateSpeech(text);
+      const audio = await generateSpeech(text, selectedVoice);
       
       if (audio) {
         const audioUrl = `data:audio/mpeg;base64,${audio}`;
@@ -2728,9 +2729,40 @@ ${conversation}`;
                         </div>
                       )}
                     </div>
+
+                    <div className="space-y-4 pt-4 border-t border-theme">
+                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500 flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                        3. Interviewer Voice
+                      </label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button
+                          onClick={() => setSelectedVoice('Kore')}
+                          className={`flex items-center justify-center gap-3 px-6 py-4 rounded-2xl border transition-all ${
+                            selectedVoice === 'Kore'
+                              ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-900/20'
+                              : 'bg-theme-input border-theme text-theme-secondary hover:border-red-500/50 hover:text-theme-primary'
+                          }`}
+                        >
+                          <User size={18} />
+                          <span className="text-xs font-black uppercase tracking-widest">Female (Kore)</span>
+                        </button>
+                        <button
+                          onClick={() => setSelectedVoice('Zephyr')}
+                          className={`flex items-center justify-center gap-3 px-6 py-4 rounded-2xl border transition-all ${
+                            selectedVoice === 'Zephyr'
+                              ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-900/20'
+                              : 'bg-theme-input border-theme text-theme-secondary hover:border-red-500/50 hover:text-theme-primary'
+                          }`}
+                        >
+                          <User size={18} />
+                          <span className="text-xs font-black uppercase tracking-widest">Male (Zephyr)</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Simulation History */}
+                {/* Simulation History */}
                   {history.length > 0 && (
                     <div className="bg-theme-surface border border-theme rounded-3xl p-8">
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
