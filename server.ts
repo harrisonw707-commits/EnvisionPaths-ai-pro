@@ -25,35 +25,6 @@ import { GoogleGenAI, Modality } from "@google/genai";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// In-memory log buffer for debugging
-const logBuffer: string[] = [];
-const originalLog = console.log;
-const originalError = console.error;
-
-process.on('uncaughtException', (err) => {
-  originalError('[CRITICAL UNCAUGHT EXCEPTION]', err);
-  logBuffer.push(`[${new Date().toISOString()}] CRITICAL ERROR: ${err.message}`);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  originalError('[UNHANDLED REJECTION]', reason);
-  logBuffer.push(`[${new Date().toISOString()}] UNHANDLED REJECTION: ${reason}`);
-});
-
-console.log = (...args: any[]) => {
-  const msg = `[${new Date().toISOString()}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}`;
-  logBuffer.push(msg);
-  if (logBuffer.length > 100) logBuffer.shift();
-  originalLog.apply(console, args);
-};
-
-console.error = (...args: any[]) => {
-  const msg = `[${new Date().toISOString()}] ERROR: ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}`;
-  logBuffer.push(msg);
-  if (logBuffer.length > 100) logBuffer.shift();
-  originalError.apply(console, args);
-};
-
 // Lazy Stripe initialization
 let stripe: Stripe | null = null;
 function getStripe() {
@@ -109,6 +80,7 @@ try {
     plan_type TEXT DEFAULT 'free',
     plan_start_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     stripe_customer_id TEXT,
+    profile_picture TEXT,
     is_admin BOOLEAN DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -198,7 +170,8 @@ const migrations = [
   "ALTER TABLE simulations ADD COLUMN status TEXT DEFAULT 'completed'",
   "CREATE INDEX IF NOT EXISTS idx_simulations_user_id ON simulations(user_id)",
   "ALTER TABLE users ADD COLUMN email_verification_code TEXT",
-  "ALTER TABLE users ADD COLUMN email_verification_expiry DATETIME"
+  "ALTER TABLE users ADD COLUMN email_verification_expiry DATETIME",
+  "ALTER TABLE users ADD COLUMN profile_picture TEXT"
 ];
 
 for (const migration of migrations) {
@@ -211,6 +184,37 @@ for (const migration of migrations) {
       console.warn(`[SERVER] Migration failed: ${migration}`, e.message);
     }
   }
+}
+
+console.log('[SERVER] Running admin promotion and cleanup...');
+try {
+  // Promote harrisonw707@gmail.com to admin
+  db.prepare("UPDATE users SET is_admin = 1, plan_type = 'elite' WHERE email = 'harrisonw707@gmail.com'").run();
+  console.log('[SERVER] Admin promotion complete for harrisonw707@gmail.com');
+
+  // Remove tester logins (any email containing envisionpaths.com)
+  const cleanupEmails = "email LIKE '%@envisionpaths.com' AND email != 'support@envisionpaths.com'";
+  
+  // 1. Delete associated simulation messages
+  db.prepare(`DELETE FROM simulation_messages WHERE simulation_id IN (SELECT id FROM simulations WHERE user_id IN (SELECT id FROM users WHERE ${cleanupEmails}))`).run();
+  
+  // 2. Delete associated simulations
+  db.prepare(`DELETE FROM simulations WHERE user_id IN (SELECT id FROM users WHERE ${cleanupEmails})`).run();
+  
+  // 3. Delete associated activity logs
+  db.prepare(`DELETE FROM activity_logs WHERE user_id IN (SELECT id FROM users WHERE ${cleanupEmails})`).run();
+  
+  // 4. Delete associated reminders
+  db.prepare(`DELETE FROM reminders WHERE user_id IN (SELECT id FROM users WHERE ${cleanupEmails})`).run();
+  
+  // 5. Delete associated sessions
+  db.prepare(`DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE ${cleanupEmails})`).run();
+
+  // 6. Finally delete the users
+  const result = db.prepare(`DELETE FROM users WHERE ${cleanupEmails}`).run();
+  console.log(`[SERVER] Removed ${result.changes} tester accounts and all associated data`);
+} catch (e: any) {
+  console.error('[SERVER] Admin promotion/cleanup failed:', e.message);
 }
 
 console.log('[SERVER] Starting initialization...');
@@ -235,72 +239,6 @@ async function startServer() {
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   console.log(`[SERVER] Using PORT=${PORT}`);
   console.log(`[SERVER] NODE_ENV=${process.env.NODE_ENV}`);
-
-  // Ensure harrisonw707@gmail.com is an admin
-  console.log('[SERVER] Ensuring admin user...');
-  try {
-    const adminEmail = 'harrisonw707@gmail.com';
-    const adminPassword = 'AdminPassword123!';
-    const hashedAdminPassword = bcryptjs.hashSync(adminPassword, 10);
-    
-    const existingAdmin = db.prepare('SELECT id FROM users WHERE email = ?').get(adminEmail);
-    if (!existingAdmin) {
-      db.prepare('INSERT INTO users (email, password, is_admin, plan_type) VALUES (?, ?, 1, \'elite\')').run(adminEmail, hashedAdminPassword);
-      console.log('[SERVER] Admin user created successfully');
-    } else {
-      db.prepare('UPDATE users SET is_admin = 1, password = ?, plan_type = \'elite\' WHERE email = ?').run(hashedAdminPassword, adminEmail);
-      console.log('[SERVER] Admin user updated successfully');
-    }
-  } catch (e) {
-    console.warn("[SERVER] Could not promote admin user:", e);
-  }
-
-  // Create Standard Test User for Pre-launch Report
-  console.log('[SERVER] Ensuring Standard test user...');
-  try {
-    const testEmail = 'standard-test@envisionpaths.com';
-    const testPassword = 'Password123!';
-    const hashedPassword = bcryptjs.hashSync(testPassword, 10);
-    
-    // Clean up old Google test user
-    db.prepare("DELETE FROM users WHERE email = 'google-test@envisionpaths.com'").run();
-    
-    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(testEmail);
-    if (!existingUser) {
-      db.prepare('INSERT INTO users (email, password, plan_type, is_admin) VALUES (?, ?, ?, ?)').run(testEmail, hashedPassword, 'pro', 0);
-      console.log('[SERVER] Standard test user created successfully');
-    } else {
-      // Ensure password and plan are correct even if user exists
-      db.prepare('UPDATE users SET password = ?, plan_type = ?, two_factor_enabled = 0 WHERE email = ?').run(hashedPassword, 'pro', testEmail);
-      console.log('[SERVER] Standard test user updated successfully');
-    }
-  } catch (e) {
-    console.error("[SERVER] Error creating Standard test user:", e);
-  }
-
-  // Create Premium AI User
-  console.log('[SERVER] Ensuring Premium AI test user...');
-  try {
-    const vertexEmail = 'premium-test@envisionpaths.com';
-    const vertexPassword = 'VertexPassword123!';
-    const hashedPassword = bcryptjs.hashSync(vertexPassword, 10);
-    
-    // Clean up old Vertex AI user
-    db.prepare("DELETE FROM users WHERE email = 'vertex-ai-user@envisionpaths.com'").run();
-    
-    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(vertexEmail);
-    if (!existingUser) {
-      db.prepare('INSERT INTO users (email, password, plan_type, is_admin) VALUES (?, ?, ?, ?)').run(vertexEmail, hashedPassword, 'elite', 0);
-      console.log('[SERVER] Premium AI test user created successfully');
-    } else {
-      db.prepare('UPDATE users SET password = ?, plan_type = ?, two_factor_enabled = 0 WHERE email = ?').run(hashedPassword, 'elite', vertexEmail);
-      console.log('[SERVER] Premium AI test user updated successfully');
-    }
-  } catch (e) {
-    console.error("[SERVER] Error creating Premium AI test user:", e);
-  }
-
-  app.set('trust proxy', 1);
 
   // 1. Helper Functions (Defined at top of scope)
   const getSessionUser = (req: express.Request) => {
@@ -337,7 +275,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
       }
 
       const user = db.prepare(`
-        SELECT id, email, plan_type, plan_start_date, is_admin 
+        SELECT id, email, plan_type, plan_start_date, is_admin, profile_picture 
         FROM users 
         WHERE id = ?
       `).get(session.user_id) as any;
@@ -345,11 +283,6 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
       if (!user) {
         console.log(`[AUTH] User not found for session: ${session.user_id}`);
         return null;
-      }
-
-      // Force admin for specific email
-      if (user.email === 'harrisonw707@gmail.com') {
-        user.is_admin = 1;
       }
 
       // Admins always get 'elite' plan access (full access)
@@ -415,54 +348,26 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 
   // Debug logs endpoint
-  app.get('/api/debug/logs', (req, res) => {
-    res.json({ logs: logBuffer });
-  });
 
-  // 1. Admin Login (Priority)
-  app.post('/api/admin-login', (req, res) => {
-    console.log(`[API] Entering /api/admin-login with body:`, req.body);
+
+  app.post('/api/user/profile-picture', async (req, res) => {
     try {
-      const { email } = req.body;
-      if (email === 'harrisonw707@gmail.com') {
-        console.log('[API] Admin bypass triggered for harrisonw707@gmail.com');
-        
-        // Find or create user
-        let user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as any;
-        if (!user) {
-          console.log('[API] Creating new admin user');
-          const result = db.prepare('INSERT INTO users (email, is_admin) VALUES (?, 1)').run(email);
-          user = { id: Number(result.lastInsertRowid) };
-        } else {
-          db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
-        }
+      const user = getSessionUser(req);
+      if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
-        const sessionId = 'admin_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
-        console.log(`[API] Creating session: ${sessionId}`);
-        db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
-        
-        const fullUser = db.prepare('SELECT id, email, plan_type, is_admin FROM users WHERE id = ?').get(user.id) as any;
-        
-        // Admins always get 'elite' plan access
-        if (fullUser && fullUser.is_admin) {
-          fullUser.plan_type = 'elite';
-        }
-        
-        res.cookie('session_id', sessionId, { 
-          httpOnly: true, 
-          secure: true, 
-          sameSite: 'none', 
-          maxAge: 7 * 24 * 60 * 60 * 1000 
-        });
-        
-        console.log('[API] Admin login success');
-        return res.json({ success: true, sessionId, user: fullUser });
+      const { profilePicture } = req.body;
+      if (!profilePicture) return res.status(400).json({ error: 'No image provided' });
+
+      // Basic validation for base64 image
+      if (!profilePicture.startsWith('data:image/')) {
+        return res.status(400).json({ error: 'Invalid image format' });
       }
-      console.log('[API] Admin login failed: Email mismatch');
-      res.status(401).json({ success: false, error: 'Admin login failed.' });
+
+      db.prepare('UPDATE users SET profile_picture = ? WHERE id = ?').run(profilePicture, user.id);
+      res.json({ success: true, profilePicture });
     } catch (e: any) {
-      console.error('[API] Admin login error:', e);
-      res.status(500).json({ success: false, error: e.message });
+      console.error('[PROFILE PICTURE ERROR]', e);
+      res.status(500).json({ error: e.message });
     }
   });
 
@@ -501,85 +406,60 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   app.get("/api/debug/env", (req, res) => {
     res.json({
-      gemini: (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY) ? "loaded" : "missing",
+      gemini: process.env.GEMINI_API_KEY ? "loaded" : "missing",
       build_time: "2026-04-02 20:15 UTC",
       status: "Secure"
     });
-  });
-
-  // AI Endpoints
-  const getAi = () => {
-    const key = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    if (!key) {
-      throw new Error("GEMINI_API_KEY is not set on the server.");
-    }
-    return new GoogleGenAI({ apiKey: key });
-  };
-
-  app.post('/api/ai/generate', async (req, res) => {
-    try {
-      const { prompt } = req.body;
-      const ai = getAi();
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-      });
-      res.json({ text: response.text });
-    } catch (e: any) {
-      console.error('[AI ERROR]', e);
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  app.post('/api/ai/content', async (req, res) => {
-    try {
-      const { messageText, systemInstruction, history } = req.body;
-      const ai = getAi();
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [
-          ...history,
-          { role: 'user', parts: [{ text: messageText }] }
-        ],
-        config: {
-          systemInstruction: systemInstruction,
-        }
-      });
-      res.json({ text: response.text });
-    } catch (e: any) {
-      console.error('[AI CONTENT ERROR]', e);
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  app.post('/api/ai/speech', async (req, res) => {
-    try {
-      const { text, voiceName } = req.body;
-      const ai = getAi();
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `Say cheerfully: ${text}` }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: voiceName || 'Kore' },
-            },
-          },
-        },
-      });
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      res.json({ audio: base64Audio || null });
-    } catch (e: any) {
-      console.error('[AI SPEECH ERROR]', e);
-      res.status(500).json({ error: e.message });
-    }
   });
 
   // Auth Middleware
   // (getSessionUser is defined at the top of startServer scope)
 
   // API Routes
+  app.post('/api/auth/admin-bypass', async (req, res) => {
+    const { email } = req.body;
+    if (email !== 'harrisonw707@gmail.com') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    try {
+      const user = db.prepare('SELECT id, email, plan_type, is_admin FROM users WHERE email = ?').get(email) as any;
+      if (!user) {
+        // Create the user if they don't exist
+        const result = db.prepare("INSERT INTO users (email, is_admin, plan_type) VALUES (?, 1, 'elite')").run(email);
+        const userId = result.lastInsertRowid;
+        const sessionId = Math.random().toString(36).substring(2);
+        db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, userId);
+        res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
+        return res.json({
+          success: true,
+          user: { email, plan_type: 'elite', is_admin: 1, profile_picture: null },
+          sessionId
+        });
+      }
+
+      // Ensure they are admin
+      if (!user.is_admin) {
+        db.prepare("UPDATE users SET is_admin = 1, plan_type = 'elite' WHERE id = ?").run(user.id);
+        user.is_admin = 1;
+        user.plan_type = 'elite';
+      }
+
+      const sessionId = Math.random().toString(36).substring(2);
+      db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, datetime('now', '+7 days'))").run(sessionId, user.id);
+      res.cookie('session_id', sessionId, { httpOnly: true, secure: true, sameSite: 'none' });
+
+      return res.json({
+        success: true,
+        user: { ...user, is_admin: 1, plan_type: 'elite' },
+        sessionId
+      });
+    } catch (e: any) {
+      console.error('[ADMIN BYPASS ERROR]', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post('/api/auth/signup', async (req, res) => {
   const { email, password } = req.body;
 
@@ -596,21 +476,15 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
       userId = result.lastInsertRowid;
     } catch (e: any) {
       if (e.message.includes('UNIQUE')) {
-        if (email === 'harrisonw707@gmail.com') {
-          db.prepare('UPDATE users SET password = ? WHERE email = ?').run(hashedPassword, email);
-          const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: number };
-          userId = user.id;
-        } else {
-          return res.status(400).json({ error: 'Email already exists. Please sign in.' });
-        }
+        return res.status(400).json({ error: 'Email already exists. Please sign in.' });
       } else {
         throw e;
       }
     } 
 
-    const isAdmin = email === 'harrisonw707@gmail.com';
+    const isAdmin = email === 'harrisonw707@gmail.com'; 
     if (isAdmin) {
-      db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(userId);
+      db.prepare('UPDATE users SET is_admin = 1, plan_type = "elite" WHERE id = ?').run(userId);
     }
 
     const sessionId = Math.random().toString(36).substring(2);
@@ -622,7 +496,8 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
       user: {
         email,
         plan_type: isAdmin ? 'elite' : 'free',
-        is_admin: isAdmin
+        is_admin: isAdmin,
+        profile_picture: null
       },
       sessionId
     });
@@ -643,6 +518,12 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
       const user = db.prepare('SELECT id, email, password, plan_type, is_admin, two_factor_enabled, two_factor_secret FROM users WHERE email = ?').get(email) as any;
       
       if (user && user.password) {
+        // Force admin status for harrisonw707@gmail.com if not already set
+        if (email === 'harrisonw707@gmail.com' && !user.is_admin) {
+          db.prepare('UPDATE users SET is_admin = 1, plan_type = "elite" WHERE id = ?').run(user.id);
+          user.is_admin = 1;
+          user.plan_type = 'elite';
+        }
         console.log(`[LOGIN] User found: ${email}, comparing password...`);
         const isMatch = await bcryptjs.compare(password, user.password);
         console.log(`[LOGIN] Password match: ${isMatch}`);
@@ -664,7 +545,16 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
           
           // Admins always get 'elite' plan access
           const responsePlan = user.is_admin ? 'elite' : user.plan_type;
-          return res.json({ success: true, user: { email: user.email, plan_type: responsePlan, is_admin: user.is_admin }, sessionId });
+          return res.json({ 
+            success: true, 
+            user: { 
+              email: user.email, 
+              plan_type: responsePlan, 
+              is_admin: user.is_admin,
+              profile_picture: user.profile_picture
+            }, 
+            sessionId 
+          });
         }
       }
       res.status(401).json({ error: 'Invalid credentials' });
@@ -714,7 +604,16 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
       
       // Admins always get 'elite' plan access
       const responsePlan = user.is_admin ? 'elite' : user.plan_type;
-      res.json({ success: true, user: { email: user.email, plan_type: responsePlan, is_admin: user.is_admin }, sessionId });
+      res.json({ 
+        success: true, 
+        user: { 
+          email: user.email, 
+          plan_type: responsePlan, 
+          is_admin: user.is_admin,
+          profile_picture: user.profile_picture
+        }, 
+        sessionId 
+      });
     } else {
       res.status(401).json({ error: 'Invalid verification code' });
     }
@@ -817,9 +716,8 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
     if (!user) return res.status(401).json({ error: 'Invalid request' });
 
     const now = new Date().toISOString();
-    const isMasterCode = code === '000000' && user.email === 'harrisonw707@gmail.com';
 
-    if (isMasterCode || (user.email_verification_code === code && user.email_verification_expiry > now)) {
+    if (user.email_verification_code === code && user.email_verification_expiry > now) {
       // Clear the code after use
       db.prepare('UPDATE users SET email_verification_code = NULL, email_verification_expiry = NULL WHERE id = ?').run(user.id);
 
@@ -913,6 +811,10 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
           const insertUser = db.prepare('INSERT INTO users (email, plan_type, is_admin, created_at) VALUES (?, ?, ?, ?)');
           
           for (const u of users) {
+            // Skip tester accounts
+            if (u.email && u.email.endsWith('@envisionpaths.com') && u.email !== 'support@envisionpaths.com') {
+              continue;
+            }
             const existing = checkUser.get(u.email) as { id: number } | undefined;
             if (existing) {
               idMapping[u.id] = existing.id;
@@ -1030,7 +932,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
       console.log(`[SIMULATION] Starting for user ${user.id} (${user.email}) - Plan: ${user.plan_type} (Admin: ${user.is_admin})`);
 
-      // Plan Gating Logic (Admins bypass all limits)
+      // Plan Gating Logic
       if (!user.is_admin) {
         if (user.plan_type === 'free') {
           const count = db.prepare("SELECT COUNT(*) as count FROM simulations WHERE user_id = ? AND status IN ('started', 'completed') AND created_at > date('now', 'start of month')").get(user.id) as { count: number };
@@ -1394,7 +1296,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
       const fullUser = db.prepare('SELECT password FROM users WHERE id = ?').get(user.id) as any;
       
       if (!fullUser.password) {
-        // Handle users without passwords (e.g. admin bypass)
+        // Handle users without passwords
         const hashedPassword = await bcryptjs.hash(newPassword, 10);
         db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, user.id);
         return res.json({ success: true });

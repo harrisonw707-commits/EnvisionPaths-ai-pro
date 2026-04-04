@@ -25,10 +25,10 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-2xl bg-theme-surface border border-theme rounded-3xl shadow-2xl overflow-hidden"
+            className="relative w-full max-w-2xl bg-theme-surface border border-theme rounded-2xl md:rounded-3xl shadow-2xl overflow-hidden"
           >
-            <div className="flex items-center justify-between p-6 border-b border-theme">
-              <h2 className="text-xl font-black uppercase italic text-theme-primary tracking-tight">{title}</h2>
+            <div className="flex items-center justify-between p-4 md:p-6 border-b border-theme">
+              <h2 className="text-lg md:text-xl font-black uppercase italic text-theme-primary tracking-tight">{title}</h2>
               <button
                 onClick={onClose}
                 className="p-2 hover:bg-theme-surface-hover rounded-xl transition-colors text-theme-secondary hover:text-theme-primary"
@@ -36,7 +36,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
                 <X size={20} />
               </button>
             </div>
-            <div className="p-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+            <div className="p-4 md:p-6 max-h-[85vh] md:max-h-[70vh] overflow-y-auto custom-scrollbar">
               {children}
             </div>
           </motion.div>

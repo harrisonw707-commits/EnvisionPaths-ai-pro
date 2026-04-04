@@ -48,6 +48,7 @@ import {
   History,
   Search,
   Activity,
+  Bell,
   ShieldCheck,
   ExternalLink,
   Upload,
@@ -69,7 +70,8 @@ import {
   VolumeX,
   Sun,
   Moon,
-  Users
+  Users,
+  Camera
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -88,7 +90,7 @@ import {
   PieChart,
   Pie
 } from 'recharts';
-import { generateAI, generateContent, generateSpeech } from './services/aiService';
+import { generateAI, generateAIStream, generateContent, generateSpeech } from './services/aiService';
 import Tooltip from './components/Tooltip';
 import Modal from './components/Modal';
 import { API_URL } from './config';
@@ -169,6 +171,7 @@ export default function App() {
   const [showSkipLoading, setShowSkipLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [profilePictureFile, setProfilePictureFile] = useState<File | null>(null);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [requires2FA, setRequires2FA] = useState(false);
   const [tempUserId, setTempUserId] = useState<number | null>(null);
@@ -191,8 +194,9 @@ export default function App() {
   const [interactionMode, setInteractionMode] = useState<'text' | 'voice'>('text');
   const [isListening, setIsListening] = useState(false);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<{ id: string; text: string; type: 'success' | 'error' | 'info' }[]>([]);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const notifiedReminders = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     const handleScroll = () => {
@@ -202,7 +206,8 @@ export default function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const addNotification = (text: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const showNotification = (text: string, type: 'success' | 'error' | 'info' = 'info') => {
+    console.log(`[NOTIFICATION] ${type.toUpperCase()}: ${text}`);
     const id = Math.random().toString(36).substr(2, 9);
     setNotifications(prev => [...prev, { id, text, type }]);
     setTimeout(() => {
@@ -220,8 +225,7 @@ export default function App() {
   const [reminders, setReminders] = useState<any[]>([]);
   const [isScheduling, setIsScheduling] = useState(false);
   const [isSchedulingLoading, setIsSchedulingLoading] = useState(false);
-  const [adminTab, setAdminTab] = useState<'overview' | 'stats' | 'debug' | 'users'>('overview');
-  const [debugLogs, setDebugLogs] = useState<{ name: string; params: any; timestamp: Date }[]>([]);
+  const [adminTab, setAdminTab] = useState<'overview' | 'stats' | 'users'>('overview');
   const [selectedSimulation, setSelectedSimulation] = useState<any>(null);
   const [simulationMessages, setSimulationMessages] = useState<any[]>([]);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -244,18 +248,7 @@ export default function App() {
     localStorage.setItem('app-theme', theme);
   }, [theme]);
 
-  const [lastUpdated] = useState('2026-03-16 16:52 UTC');
 
-  // Debug check for API key
-  useEffect(() => {
-    fetch(API_URL + '/api/debug/env')
-      .then(res => res.json())
-      .then(data => {
-        console.log("[Debug] Server AI Configuration:", data);
-      })
-      .catch(err => console.error("[Debug] Failed to check server env:", err));
-  }, []);
-  const [lastChecked, setLastChecked] = useState(new Date().toLocaleString());
   const [authError, setAuthError] = useState<string | null>(null);
   const [showRetry, setShowRetry] = useState(false);
 
@@ -280,7 +273,6 @@ export default function App() {
 
   const [loginError, setLoginError] = useState<string | null>(null);
 
-  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [confirmModal, setConfirmModal] = useState<{ 
     isOpen: boolean; 
     title: string; 
@@ -290,12 +282,6 @@ export default function App() {
     onConfirm: (inputValue?: string) => void 
   } | null>(null);
   const [modalInputValue, setModalInputValue] = useState('');
-
-  const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
-    console.log(`[NOTIFICATION] ${type.toUpperCase()}: ${message}`);
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 5000);
-  };
 
   const requestNotificationPermission = async () => {
     if (typeof Notification === 'undefined') {
@@ -330,7 +316,7 @@ export default function App() {
     if (window.gtag) {
       window.gtag('event', name, params);
     }
-    setDebugLogs(prev => [{ name, params, timestamp: new Date() }, ...prev].slice(0, 50));
+    // setDebugLogs(prev => [{ name, params, timestamp: new Date() }, ...prev].slice(0, 50));
     console.log(`[GA4 EVENT]: ${name}`, params);
   };
 
@@ -431,14 +417,35 @@ Generated by EnvisionPaths Career Intelligence`;
   };
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const simulationEndRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = () => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+    if (chatEndRef.current) {
+      // Use a small delay to ensure the DOM has updated and layout is calculated
+      // especially with ReactMarkdown which might change height after initial render
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior, block: "end" });
+      }, 100);
+    }
+  };
+
+  const scrollSimulationToBottom = (behavior: ScrollBehavior = "smooth") => {
+    if (simulationEndRef.current) {
+      setTimeout(() => {
+        simulationEndRef.current?.scrollIntoView({ behavior, block: "end" });
+      }, 100);
+    }
   };
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isTyping]);
+  }, [messages, isTyping, step]);
+
+  useEffect(() => {
+    if (selectedSimulation) {
+      scrollSimulationToBottom();
+    }
+  }, [simulationMessages, selectedSimulation]);
 
   useEffect(() => {
     if (typeof Notification !== 'undefined') {
@@ -454,50 +461,55 @@ Generated by EnvisionPaths Career Intelligence`;
     const checkReminders = () => {
       const now = new Date();
       reminders.forEach(reminder => {
-        if (!reminder.completed) {
+        if (!reminder.completed && !notifiedReminders.current.has(reminder.id)) {
           const scheduledTime = new Date(reminder.scheduled_at);
           const diff = scheduledTime.getTime() - now.getTime();
-          console.log(`[REMINDER] Checking "${reminder.title}": diff=${diff}ms`);
           
-          // If reminder is due within the next minute and hasn't been notified yet
-          if (diff > -30000 && diff < 60000) {
+          // If reminder is due within the next minute (or has just passed)
+          if (diff > -60000 && diff < 60000) {
             console.log(`[REMINDER] Triggering alert for: ${reminder.title}`);
-            showNotification(`REMINDER: ${reminder.title} is starting soon!`, 'success');
             
-            // System notification for background alerts
+            // Track that we've notified this one in the current session
+            notifiedReminders.current.add(reminder.id);
+            
+            // 1. In-app notification
+            showNotification(`PRACTICE TIME: ${reminder.title} is starting now!`, 'success');
+            
+            // 2. System-level push notification
             if (notificationPermission === 'granted') {
               try {
+                const options = {
+                  body: reminder.description || `${reminder.title} is starting now!`,
+                  icon: '/icons/icon-192x192.png',
+                  badge: '/icons/icon-192x192.png',
+                  vibrate: [200, 100, 200],
+                  tag: `reminder-${reminder.id}`,
+                  requireInteraction: true,
+                  data: { url: '/' }
+                };
+
                 if ('serviceWorker' in navigator) {
                   navigator.serviceWorker.ready.then(registration => {
-                    registration.showNotification('EnvisionPaths Reminder', {
-                      body: `${reminder.title} is starting soon!`,
-                      icon: '/icons/icon-192x192.png',
-                      badge: '/icons/icon-192x192.png',
-                      vibrate: [200, 100, 200],
-                      tag: `reminder-${reminder.id}`
-                    } as any);
+                    registration.showNotification('Practice Reminder', options);
                   });
                 } else {
-                  new Notification('EnvisionPaths Reminder', {
-                    body: `${reminder.title} is starting soon!`,
-                    icon: '/icons/icon-192x192.png'
-                  });
+                  new Notification('Practice Reminder', options);
                 }
               } catch (e) {
                 console.error('Failed to show system notification:', e);
               }
             }
             
-            // Mark as completed so we don't alert again
+            // Mark as completed in DB so it doesn't show up in future fetches
             toggleReminder(reminder.id, false);
           }
         }
       });
     };
 
-    const interval = setInterval(checkReminders, 30000); // Check every 30 seconds for better accuracy
+    const interval = setInterval(checkReminders, 10000); // Check every 10 seconds for better precision
     return () => clearInterval(interval);
-  }, [reminders]);
+  }, [reminders, notificationPermission]);
 
   const fetchReminders = async () => {
     try {
@@ -703,89 +715,94 @@ Generated by EnvisionPaths Career Intelligence`;
   };
 
   const syncPlayConsoleData = async () => {
-    if (!confirm('This will sync historical data from Google Play Console. Continue?')) return;
-    
-    setIsImporting(true);
-    try {
-      const activity_logs: any[] = [];
-      
-      // Data from Play Console Screenshots
-      const playData = [
-        { date: '2026-03-04', total: 4, countries: { 'Argentina': 1 } },
-        { date: '2026-03-05', total: 7, countries: { 'Argentina': 1 } },
-        { date: '2026-03-06', total: 7, countries: { 'Singapore': 2, 'United Kingdom': 3 } },
-        { date: '2026-03-07', total: 9, countries: { 'Argentina': 3, 'Singapore': 2, 'United Kingdom': 1, 'Italy': 1 } },
-        { date: '2026-03-11', total: 26, countries: { 'Argentina': 2, 'Singapore': 1, 'United Kingdom': 3, 'Italy': 2, 'Türkiye': 4, 'United States': 3, 'Australia': 2, 'Monaco': 1, 'Morocco': 1, 'South Africa': 1, 'Colombia': 1 } },
-        { date: '2026-03-12', total: 26, countries: { 'Argentina': 2, 'Singapore': 1, 'United Kingdom': 3, 'Italy': 2, 'Türkiye': 4, 'United States': 3, 'Australia': 2, 'Monaco': 1, 'Morocco': 1, 'South Africa': 1, 'Colombia': 1 } }
-      ];
+    setConfirmModal({
+      isOpen: true,
+      title: 'Sync Play Console Data',
+      message: 'This will sync historical data from Google Play Console. Continue?',
+      onConfirm: async () => {
+        setIsImporting(true);
+        try {
+          const activity_logs: any[] = [];
+          
+          // Data from Play Console Screenshots
+          const playData = [
+            { date: '2026-03-04', total: 4, countries: { 'Argentina': 1 } },
+            { date: '2026-03-05', total: 7, countries: { 'Argentina': 1 } },
+            { date: '2026-03-06', total: 7, countries: { 'Singapore': 2, 'United Kingdom': 3 } },
+            { date: '2026-03-07', total: 9, countries: { 'Argentina': 3, 'Singapore': 2, 'United Kingdom': 1, 'Italy': 1 } },
+            { date: '2026-03-11', total: 26, countries: { 'Argentina': 2, 'Singapore': 1, 'United Kingdom': 3, 'Italy': 2, 'Türkiye': 4, 'United States': 3, 'Australia': 2, 'Monaco': 1, 'Morocco': 1, 'South Africa': 1, 'Colombia': 1 } },
+            { date: '2026-03-12', total: 26, countries: { 'Argentina': 2, 'Singapore': 1, 'United Kingdom': 3, 'Italy': 2, 'Türkiye': 4, 'United States': 3, 'Australia': 2, 'Monaco': 1, 'Morocco': 1, 'South Africa': 1, 'Colombia': 1 } }
+          ];
 
-      playData.forEach(day => {
-        let count = 0;
-        // Add specific country logs
-        Object.entries(day.countries).forEach(([country, num]) => {
-          for (let i = 0; i < num; i++) {
-            activity_logs.push({
-              activity: 'session_start',
-              country,
-              created_at: `${day.date}T${Math.floor(Math.random() * 24).toString().padStart(2, '0')}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}:00Z`,
-              email: 'play-console-user@envisionpaths.com'
+          playData.forEach(day => {
+            let count = 0;
+            // Add specific country logs
+            Object.entries(day.countries).forEach(([country, num]) => {
+              for (let i = 0; i < num; i++) {
+                activity_logs.push({
+                  activity: 'session_start',
+                  country,
+                  created_at: `${day.date}T${Math.floor(Math.random() * 24).toString().padStart(2, '0')}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}:00Z`,
+                  email: 'support@envisionpaths.com'
+                });
+                count++;
+              }
             });
-            count++;
-          }
-        });
-        
-        // Add "Others" logs to match total
-        const others = day.total - count;
-        for (let i = 0; i < others; i++) {
-          activity_logs.push({
-            activity: 'session_start',
-            country: 'Other',
-            created_at: `${day.date}T${Math.floor(Math.random() * 24).toString().padStart(2, '0')}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}:00Z`,
-            email: 'play-console-user@envisionpaths.com'
+            
+            // Add "Others" logs to match total
+            const others = day.total - count;
+            for (let i = 0; i < others; i++) {
+              activity_logs.push({
+                activity: 'session_start',
+                country: 'Other',
+                created_at: `${day.date}T${Math.floor(Math.random() * 24).toString().padStart(2, '0')}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}:00Z`,
+                email: 'support@envisionpaths.com'
+              });
+            }
           });
+
+          // Add Device Acquisitions (39 total)
+          for (let i = 0; i < 39; i++) {
+            const randomDay = playData[Math.floor(Math.random() * playData.length)].date;
+            activity_logs.push({
+              activity: 'device_acquisition',
+              country: 'Unknown',
+              created_at: `${randomDay}T${Math.floor(Math.random() * 24).toString().padStart(2, '0')}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}:00Z`,
+              email: 'support@envisionpaths.com'
+            });
+          }
+
+          // Add First Opens (18 total)
+          for (let i = 0; i < 18; i++) {
+            const randomDay = playData[Math.floor(Math.random() * playData.length)].date;
+            activity_logs.push({
+              activity: 'first_open',
+              country: 'Unknown',
+              created_at: `${randomDay}T${Math.floor(Math.random() * 24).toString().padStart(2, '0')}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}:00Z`,
+              email: 'support@envisionpaths.com'
+            });
+          }
+
+          const res = await fetch(API_URL + '/api/admin/import-data', {
+            method: 'POST',
+            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ activity_logs })
+          });
+
+          if (res.ok) {
+            showNotification('Play Console data synced successfully!', 'success');
+            fetchActivityLogs();
+          } else {
+            showNotification('Failed to sync Play Console data.', 'error');
+          }
+        } catch (e) {
+          console.error('Error syncing Play Console data:', e);
+          showNotification('Error syncing data.', 'error');
+        } finally {
+          setIsImporting(false);
         }
-      });
-
-      // Add Device Acquisitions (39 total)
-      for (let i = 0; i < 39; i++) {
-        const randomDay = playData[Math.floor(Math.random() * playData.length)].date;
-        activity_logs.push({
-          activity: 'device_acquisition',
-          country: 'Unknown',
-          created_at: `${randomDay}T${Math.floor(Math.random() * 24).toString().padStart(2, '0')}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}:00Z`,
-          email: 'new-device@envisionpaths.com'
-        });
       }
-
-      // Add First Opens (18 total)
-      for (let i = 0; i < 18; i++) {
-        const randomDay = playData[Math.floor(Math.random() * playData.length)].date;
-        activity_logs.push({
-          activity: 'first_open',
-          country: 'Unknown',
-          created_at: `${randomDay}T${Math.floor(Math.random() * 24).toString().padStart(2, '0')}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}:00Z`,
-          email: 'first-open@envisionpaths.com'
-        });
-      }
-
-      const res = await fetch(API_URL + '/api/admin/import-data', {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ activity_logs })
-      });
-
-      if (res.ok) {
-        showNotification('Play Console data synced successfully!', 'success');
-        fetchActivityLogs();
-      } else {
-        showNotification('Failed to sync Play Console data.', 'error');
-      }
-    } catch (e) {
-      console.error('Error syncing Play Console data:', e);
-      showNotification('Error syncing data.', 'error');
-    } finally {
-      setIsImporting(false);
-    }
+    });
   };
 
   const exportAllData = async () => {
@@ -806,7 +823,7 @@ Generated by EnvisionPaths Career Intelligence`;
       }
     } catch (e) {
       console.error('Error exporting data:', e);
-      alert('Failed to export data.');
+      showNotification('Failed to export data.', 'error');
     } finally {
       setIsExporting(false);
     }
@@ -883,15 +900,15 @@ Generated by EnvisionPaths Career Intelligence`;
       });
 
       if (res.ok) {
-        alert('Data imported successfully!');
+        showNotification('Data imported successfully!', 'success');
         fetchActivityLogs();
       } else {
         const err = await res.json();
-        alert(`Import failed: ${err.error}`);
+        showNotification(`Import failed: ${err.error}`, 'error');
       }
     } catch (e: any) {
       console.error('Error importing data:', e);
-      alert(`Error importing data:\n${e.message || 'Unknown error'}`);
+      showNotification(`Error importing data: ${e.message || 'Unknown error'}`, 'error');
     } finally {
       setIsImporting(false);
       e.target.value = '';
@@ -1025,6 +1042,7 @@ Generated by EnvisionPaths Career Intelligence`;
           const data = await res.json();
           console.log('[APP] fetchProfile data:', data);
           setUser(data.user);
+          setIsAdmin(!!data.user.is_admin);
           setSelectedPlan(data.user.plan_type);
           setSessionsUsed(data.user.simulations_this_month);
           setTwoFactorEnabled(!!data.user.two_factor_enabled);
@@ -1220,7 +1238,7 @@ Generated by EnvisionPaths Career Intelligence`;
         setQrCodeUrl(data.qrCodeUrl);
         setIsSettingUp2FA(true);
       } else {
-        alert(data.error || 'Failed to initiate 2FA setup');
+        showNotification(data.error || 'Failed to initiate 2FA setup', 'error');
       }
     } catch (e) {
       console.error('2FA setup error:', e);
@@ -1239,26 +1257,43 @@ Generated by EnvisionPaths Career Intelligence`;
         setTwoFactorEnabled(true);
         setIsSettingUp2FA(false);
         setSetupCode('');
-        alert('Two-factor authentication enabled successfully!');
+        showNotification('Two-factor authentication enabled successfully!', 'success');
       } else {
         const data = await res.json();
-        alert(data.error || 'Invalid verification code');
+        showNotification(data.error || 'Invalid verification code', 'error');
       }
     } catch (e) {
       console.error('2FA verification error:', e);
     }
   };
 
+  const handleAdminBypass = async () => {
+    if (email !== 'harrisonw707@gmail.com') return;
+    
+    try {
+      const res = await fetch(API_URL + '/api/auth/admin-bypass', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      
+      const data = await res.json();
+      if (data.success) {
+        setUser(data.user);
+        setIsAdmin(!!data.user.is_admin);
+        setStep('setup');
+        showNotification('Admin Quick Access successful!', 'success');
+      } else {
+        showNotification(data.error || 'Admin bypass failed', 'error');
+      }
+    } catch (e) {
+      showNotification('Connection error', 'error');
+    }
+  };
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
-
-    // Client-side email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      setAuthError('Please enter a valid email address.');
-      return;
-    }
 
     const endpoint = authMode === 'signup' ? API_URL + '/api/auth/signup' : API_URL + '/api/auth/login';
     
@@ -1420,6 +1455,14 @@ Generated by EnvisionPaths Career Intelligence`;
   const handleUpdateEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!updateEmailValue) return;
+    
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(updateEmailValue)) {
+      showNotification('Please enter a valid email address.', 'error');
+      return;
+    }
+
     setIsUpdatingEmail(true);
     setUpdateMessage(null);
     try {
@@ -1556,55 +1599,108 @@ Generated by EnvisionPaths Career Intelligence`;
     generateSummary();
   };
 
- const generateSummary = async () => {
-  try {
-    const conversation = messages.map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n\n');
-
-    const prompt = `As an expert career coach, analyze this interview:
-
-${conversation}`;
-
-    // TEMP MOCK (good, keep this for now)
-    const response = { text: "Test working" };
-
-    const summaryText = response.text;
-    setSummary(summaryText);
-
-    const scoreMatch = summaryText.match(/Score:?\s*(\d+)/i) || summaryText.match(/(\d+)\/10/);
-    const score = scoreMatch ? parseInt(scoreMatch[1]) : 7;
-
+  const generateSummary = async () => {
+    setIsGeneratingSummary(true);
+    setSummary(""); // Clear previous summary
+    let fullSummary = "";
     try {
-      if (API_URL) {
-        await fetch(API_URL + '/api/simulations/complete', {
-          method: 'POST',
-          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({
-            simulation_id: currentSimulationId,
-            job_title: jobTitle,
-            industry,
-            score,
-            feedback: summaryText,
-            messages: messages.map(m => ({
-              role: m.role,
-              text: m.text
-            }))
-          })
-        });
+      const conversation = messages.map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n\n');
+
+      const prompt = `As an expert career coach, provide a comprehensive performance report for a candidate who just completed an interview for the position of "${jobTitle}" in the "${industry}" industry.
+
+Analyze the following interview transcript:
+${conversation}
+
+Your report MUST include:
+1. **Overall Performance Score**: A score out of 10 (e.g., "Score: 8/10").
+2. **Executive Summary**: A brief overview of the candidate's performance.
+3. **Question-by-Question Feedback**: For EACH question asked by the interviewer, provide:
+   - The Question.
+   - Analysis of the candidate's answer.
+   - **Where they excelled**: Specific strengths shown in this answer.
+   - **Where they could improve**: Specific actionable advice for a better response.
+4. **Industry-Specific Insights**: How their answers align with current trends and expectations in the ${industry} industry.
+5. **Final Recommendation**: Key areas to focus on for their next real interview.
+
+Format the output clearly using Markdown headers and bullet points.`;
+
+      const stream = generateAIStream(prompt);
+      for await (const chunk of stream) {
+        fullSummary += chunk;
+        setSummary(fullSummary);
       }
-    } catch (e) {
-      console.error("Backend failed:", e);
+
+      const scoreMatch = fullSummary.match(/Score:?\s*(\d+)/i) || fullSummary.match(/(\d+)\/10/);
+      const score = scoreMatch ? parseInt(scoreMatch[1]) : 7;
+
+      try {
+        if (API_URL) {
+          await fetch(API_URL + '/api/simulations/complete', {
+            method: 'POST',
+            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+              simulation_id: currentSimulationId,
+              job_title: jobTitle,
+              industry,
+              score,
+              feedback: fullSummary,
+              messages: messages.map(m => ({
+                role: m.role,
+                text: m.text
+              }))
+            })
+          });
+        }
+      } catch (e) {
+        console.error("Backend failed:", e);
+      }
+
+      setCurrentSimulationId(null);
+      fetchHistory();
+
+    } catch (error) {
+      console.error("Error generating summary:", error);
+      setSummary("Error generating summary. Please try again.");
+    } finally {
+      setIsGeneratingSummary(false);
+    }
+  };
+
+  const handleProfilePictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Limit file size to 2MB
+    if (file.size > 2 * 1024 * 1024) {
+      showNotification('Image must be smaller than 2MB', 'error');
+      return;
     }
 
-    setCurrentSimulationId(null);
-    fetchHistory();
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64String = reader.result as string;
+      try {
+        const res = await fetch(`${API_URL}/api/user/profile-picture`, {
+          method: 'POST',
+          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ profilePicture: base64String })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setUser({ ...user, profile_picture: data.profilePicture });
+          showNotification('Profile picture updated!', 'success');
+        } else {
+          const err = await res.json();
+          showNotification(err.error || 'Failed to update profile picture.', 'error');
+        }
+      } catch (error) {
+        console.error('Profile picture upload error:', error);
+        showNotification('Error uploading profile picture.', 'error');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
-  } catch (error) {
-    console.error("Error generating summary:", error);
-    setSummary("Error generating summary.");
-  } finally {
-    setIsGeneratingSummary(false);
-  }
-};
   const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1653,7 +1749,7 @@ ${conversation}`;
           console.error('Error parsing error response:', e);
         }
         
-        alert(errorMessage);
+        showNotification(errorMessage, 'error');
         if (res.status === 403) setStep('pricing');
         return;
       }
@@ -1732,7 +1828,7 @@ ${conversation}`;
 
   const toggleListening = () => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert('Speech recognition is not supported in your browser.');
+      showNotification('Speech recognition is not supported in your browser.', 'error');
       return;
     }
 
@@ -1809,6 +1905,8 @@ ${conversation}`;
       and then move on to the next insightful interview question. 
       Focus on behavioral, technical, and situational questions.
       
+      CRITICAL: Keep your responses concise and focused. Do not be overly wordy.
+      
       MANDATORY: At some point during the interview (preferably towards the middle), you MUST ask the candidate: "Describe yourself with one word."
       
       CRITICAL: You have currently asked ${questionsAsked} questions. 
@@ -1848,8 +1946,8 @@ ${conversation}`;
       console.error("Error sending message:", error);
       const isQuota = error.message?.includes('429') || error.message?.toLowerCase().includes('quota');
       const errorMsg = isQuota 
-        ? "AI Quota exceeded. The system is busy. Please wait 60 seconds and try again." 
-        : (error.message || "Failed to get response from AI. Please try again.");
+        ? "System Quota exceeded. The system is busy. Please wait 60 seconds and try again." 
+        : (error.message || "Failed to get response from the system. Please try again.");
       
       showNotification(errorMsg, 'error');
       setShowRetry(true); // Show the reset button
@@ -1858,7 +1956,6 @@ ${conversation}`;
     }
   };
 
-  console.log('[DEBUG] App Render - step:', step, 'isSettingsOpen:', isSettingsOpen);
 
   const dynamicPlaceholder = (() => {
     if (interviewCompleted) return "Interview finished. View your results below.";
@@ -1888,8 +1985,8 @@ ${conversation}`;
 
       {/* Header */}
       {step !== 'auth' && (
-        <header className="bg-theme-main border-b border-theme px-6 py-4">
-          <div className="max-w-5xl mx-auto flex items-center justify-between">
+        <header className="bg-theme-main border-b border-theme px-4 py-2 md:px-6 md:py-3">
+          <div className="max-w-6xl mx-auto flex items-center justify-between">
             <div className="flex items-center">
               <span className="text-xl font-black tracking-tighter uppercase italic text-theme-primary">
                 Envision<span className="text-red-600">Paths</span>
@@ -1904,7 +2001,7 @@ ${conversation}`;
                   className="flex items-center gap-2 px-3 py-1 bg-red-600/10 border border-red-600/20 rounded-full mr-2"
                 >
                   <RefreshCw size={10} className="text-red-500 animate-spin" />
-                  <span className="text-[9px] font-black uppercase tracking-widest text-red-500">AI Processing</span>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-red-500">Processing</span>
                 </motion.div>
               )}
               <Tooltip content="Manage your subscription" position="bottom">
@@ -1931,13 +2028,19 @@ ${conversation}`;
               )}
               <button 
                 onClick={() => {
-                  console.log('[DEBUG] Opening Account Settings from Header');
                   setIsSettingsOpen(true);
                 }}
                 aria-label="Settings"
-                className="text-theme-secondary hover:text-red-500 transition-colors"
+                className="flex items-center gap-2 text-theme-secondary hover:text-red-500 transition-colors group"
               >
-                <Settings size={20} />
+                <div className="w-8 h-8 rounded-full border border-theme overflow-hidden bg-theme-surface flex items-center justify-center group-hover:border-red-500/50 transition-colors">
+                  {user?.profile_picture ? (
+                    <img src={user.profile_picture} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <Settings size={18} />
+                  )}
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-widest hidden md:inline">Account</span>
               </button>
               <Tooltip content="Sign out of your account" position="bottom">
                 <button 
@@ -1954,13 +2057,7 @@ ${conversation}`;
         </header>
       )}
 
-      <main className={`flex-1 max-w-5xl mx-auto w-full flex flex-col ${step === 'interview' ? 'p-2 sm:p-4' : 'p-6'}`}>
-        {step !== 'interview' && (
-          <div className="flex justify-end mb-2 gap-4">
-            <span className="text-[10px] font-medium text-theme-secondary uppercase tracking-tighter">App Updated: {lastUpdated}</span>
-            <span className="text-[10px] font-medium text-theme-secondary uppercase tracking-tighter">Last Checked: {lastChecked}</span>
-          </div>
-        )}
+      <main className={`flex-1 max-w-6xl mx-auto w-full flex flex-col ${step === 'interview' ? 'p-2 sm:p-3' : 'p-4 md:p-6'}`}>
         <AnimatePresence mode="wait">
           {step === 'auth' ? (
             <motion.div 
@@ -1968,37 +2065,37 @@ ${conversation}`;
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="min-h-[90vh] flex flex-col items-center justify-center py-12"
+              className="min-h-[90vh] flex flex-col items-center justify-center py-8 md:py-12"
             >
-              <div className="max-w-4xl w-full grid lg:grid-cols-2 gap-12 items-center">
-                <div className="space-y-8 text-center lg:text-left">
+              <div className="max-w-4xl w-full grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
+                <div className="space-y-6 md:space-y-8 text-center lg:text-left px-4 md:px-0">
                   <div className="inline-block px-4 py-1.5 bg-theme-surface border border-theme rounded-full">
                     <p className="text-[10px] font-black text-theme-secondary uppercase tracking-[0.3em]">Strategic Interview Coaching</p>
                   </div>
-                  <h1 className="text-6xl sm:text-7xl font-black tracking-tighter uppercase italic leading-[0.9] text-theme-primary">
+                  <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tighter uppercase italic leading-[0.9] text-theme-primary">
                     Navigate Your Path <br />
                     Towards Success
                   </h1>
-                  <p className="text-theme-secondary text-lg max-w-md mx-auto lg:mx-0 leading-relaxed">
+                  <p className="text-theme-secondary text-base md:text-lg max-w-md mx-auto lg:mx-0 leading-relaxed">
                     Strategic interview preparation for modern professionals. Practice with industry-specific scenarios and get real-time feedback to land your dream job.
                   </p>
-                  <div className="flex flex-wrap justify-center lg:justify-start gap-6 pt-4">
+                  <div className="flex flex-wrap justify-center lg:justify-start gap-4 md:gap-6 pt-2 md:pt-4">
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 size={16} className="text-red-500" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-theme-secondary">Real-time Analysis</span>
+                      <CheckCircle2 size={14} className="text-red-500" />
+                      <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-theme-secondary">Real-time Analysis</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 size={16} className="text-red-500" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-theme-secondary">Industry Specific</span>
+                      <CheckCircle2 size={14} className="text-red-500" />
+                      <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-theme-secondary">Industry Specific</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 size={16} className="text-red-500" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-theme-secondary">Expert Coaching</span>
+                      <CheckCircle2 size={14} className="text-red-500" />
+                      <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-theme-secondary">Expert Coaching</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-theme-surface border border-theme p-10 rounded-3xl backdrop-blur-xl shadow-2xl relative">
+                <div className="bg-theme-surface border border-theme p-6 sm:p-10 rounded-3xl backdrop-blur-xl shadow-2xl relative mx-4 md:mx-0">
                   {/* Decorative elements removed per user request */}
                   
                   <div className="text-center mb-8">
@@ -2025,57 +2122,6 @@ ${conversation}`;
                   </motion.div>
                 )}
 
-                {/* Admin Bypass - Hidden unless admin email is entered */}
-                {email === 'harrisonw707@gmail.com' && (
-                  <div className="mb-8">
-                    {loginError && (
-                      <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-[10px] font-bold uppercase tracking-widest text-center">
-                        {loginError}
-                      </div>
-                    )}
-                    <button 
-                      onClick={async () => {
-                        console.log('[AUTH] Admin bypass clicked');
-                        setLoginError(null);
-                        setIsLoading(true);
-                        try {
-                          const response = await fetch(API_URL + '/api/admin-login', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: 'harrisonw707@gmail.com' })
-                          });
-                          const data = await response.json();
-                          if (data.success) {
-                            console.log('[AUTH] Admin login success, sessionId:', data.sessionId);
-                            if (data.sessionId) {
-                              localStorage.setItem('session_id', data.sessionId);
-                            }
-                            if (data.user) {
-                              setIsAdmin(!!data.user.is_admin);
-                              setSelectedPlan(data.user.is_admin ? 'elite' : data.user.plan_type);
-                            }
-                            setStep('admin');
-                          } else {
-                            console.error('[AUTH] Admin login failed:', data.error);
-                            setLoginError(data.error || 'Access denied.');
-                          }
-                        } catch (err) {
-                          console.error('[AUTH] Admin login server error:', err);
-                          setLoginError('Server error.');
-                        } finally {
-                          setIsLoading(false);
-                        }
-                      }}
-                      className="w-full p-5 bg-theme-surface hover:bg-theme-surface-hover text-theme-secondary font-black uppercase tracking-[0.2em] rounded-xl transition-all flex items-center justify-center gap-2 border border-theme group cursor-pointer"
-                    >
-                      System Access
-                      <Shield size={18} className="group-hover:scale-110 transition-transform" />
-                    </button>
-                    <p className="text-[9px] text-theme-secondary uppercase tracking-widest text-center mt-3 font-bold">
-                      Restricted Access Only
-                    </p>
-                  </div>
-                )}
 
 
                 {showForgotPasswordForm ? (
@@ -2090,7 +2136,7 @@ ${conversation}`;
                     </div>
 
                     {resetStep === 'email' && (
-                      <form onSubmit={handleForgotPassword} className="space-y-5">
+                      <form onSubmit={handleForgotPassword} className="space-y-4 md:space-y-5">
                         <div className="space-y-2">
                           <label className="text-[10px] font-bold uppercase tracking-widest text-theme-secondary ml-1">Your Email</label>
                           <div className="relative">
@@ -2101,13 +2147,13 @@ ${conversation}`;
                               placeholder="Enter your email address"
                               value={forgotPasswordEmail}
                               onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                              className="w-full pl-12 pr-4 py-5 bg-theme-input border border-theme rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-all text-sm text-theme-primary"
+                              className="w-full pl-12 pr-4 py-4 md:py-5 bg-theme-input border border-theme rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-all text-sm text-theme-primary"
                             />
                           </div>
                         </div>
                         <button 
                           type="submit"
-                          className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest py-5 rounded-xl transition-all shadow-lg shadow-red-900/20"
+                          className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest py-4 md:py-5 rounded-xl transition-all shadow-lg shadow-red-900/20"
                         >
                           Send Reset Code
                         </button>
@@ -2251,7 +2297,7 @@ ${conversation}`;
                   </div>
                 ) : (
                   <React.Fragment>
-                    <form onSubmit={handleAuth} className="space-y-5">
+                    <form onSubmit={handleAuth} className="space-y-4 md:space-y-5">
                       <div className="space-y-2">
                         <label htmlFor="email" className="text-[10px] font-bold uppercase tracking-widest text-theme-secondary ml-1">Your Email</label>
                         <Tooltip content={authMode === 'login' ? "Enter your registered email" : "Enter your professional email"} position="right">
@@ -2265,10 +2311,22 @@ ${conversation}`;
                               placeholder="Enter your email address"
                               value={email}
                               onChange={(e) => setEmail(e.target.value)}
-                              className="w-full pl-12 pr-4 py-5 bg-theme-input border border-theme rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-all text-sm text-theme-primary"
+                              className="w-full pl-12 pr-4 py-4 md:py-5 bg-theme-input border border-theme rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-all text-sm text-theme-primary"
                             />
                           </div>
                         </Tooltip>
+                        {email === 'harrisonw707@gmail.com' && (
+                          <motion.button
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            type="button"
+                            onClick={handleAdminBypass}
+                            className="w-full mt-2 bg-red-600/10 border border-red-600/20 text-red-500 hover:bg-red-600 hover:text-white font-black uppercase tracking-[0.2em] py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-[10px]"
+                          >
+                            <Shield size={14} />
+                            Admin Quick Access (No Password)
+                          </motion.button>
+                        )}
                       </div>
 
                       <div className="space-y-2">
@@ -2284,7 +2342,7 @@ ${conversation}`;
                               placeholder="Enter your secure password"
                               value={password}
                               onChange={(e) => setPassword(e.target.value)}
-                              className="w-full pl-12 pr-4 py-5 bg-theme-input border border-theme rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-all text-sm text-theme-primary"
+                              className="w-full pl-12 pr-4 py-4 md:py-5 bg-theme-input border border-theme rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-all text-sm text-theme-primary"
                             />
                           </div>
                         </Tooltip>
@@ -2293,7 +2351,7 @@ ${conversation}`;
                       <Tooltip content={authMode === 'login' ? "Securely access your dashboard" : "Join the Envision community"}>
                         <button 
                           type="submit"
-                          className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] py-5 rounded-xl transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2 border border-theme group"
+                          className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] py-4 md:py-5 rounded-xl transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2 border border-theme group"
                         >
                           {authMode === 'login' ? 'Sign In' : 'Join EnvisionPaths'}
                           <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
@@ -2355,16 +2413,16 @@ ${conversation}`;
 
                     <div className="mt-12 pt-8 border-t border-theme">
                       <p className="text-[10px] text-theme-secondary uppercase tracking-[0.2em] font-black mb-6 text-center">Quick Start Guide</p>
-                      <div className="grid grid-cols-3 gap-4">
-                        <div className="space-y-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="space-y-2 p-4 bg-theme-surface border border-theme rounded-xl sm:bg-transparent sm:border-0 sm:p-0">
                           <div className="w-6 h-6 rounded-full bg-red-600/10 border border-red-600/20 flex items-center justify-center text-[10px] font-black text-red-500 mx-auto">1</div>
                           <p className="text-[9px] text-theme-secondary uppercase tracking-widest text-center leading-tight">Click Sign Up Below</p>
                         </div>
-                        <div className="space-y-2">
+                        <div className="space-y-2 p-4 bg-theme-surface border border-theme rounded-xl sm:bg-transparent sm:border-0 sm:p-0">
                           <div className="w-6 h-6 rounded-full bg-red-600/10 border border-red-600/20 flex items-center justify-center text-[10px] font-black text-red-500 mx-auto">2</div>
                           <p className="text-[9px] text-theme-secondary uppercase tracking-widest text-center leading-tight">Create Account</p>
                         </div>
-                        <div className="space-y-2">
+                        <div className="space-y-2 p-4 bg-theme-surface border border-theme rounded-xl sm:bg-transparent sm:border-0 sm:p-0">
                           <div className="w-6 h-6 rounded-full bg-red-600/10 border border-red-600/20 flex items-center justify-center text-[10px] font-black text-red-500 mx-auto">3</div>
                           <p className="text-[9px] text-theme-secondary uppercase tracking-widest text-center leading-tight">Access Dashboard</p>
                         </div>
@@ -2385,11 +2443,11 @@ ${conversation}`;
               exit={{ opacity: 0, y: -20 }}
               className="max-w-6xl mx-auto mt-8 md:mt-12 px-4 md:px-0"
             >
-              <div className="text-center mb-8 md:mb-12">
-                <h2 className="text-3xl md:text-5xl font-black tracking-tighter uppercase italic mb-4">
+              <div className="text-center mb-6 md:mb-12">
+                <h2 className="text-2xl md:text-5xl font-black tracking-tighter uppercase italic mb-3 md:mb-4">
                   {sessionsUsed >= 2 && (!selectedPlan || selectedPlan === 'free') ? 'Ready for more practice?' : 'Level Up Your Career'}
                 </h2>
-                <p className="text-theme-secondary max-w-2xl mx-auto">
+                <p className="text-theme-secondary max-w-2xl mx-auto text-sm md:text-base">
                   {sessionsUsed >= 2 && (!selectedPlan || selectedPlan === 'free')
                     ? "You’ve mastered your simulations for now! Ready for more practice? Keep the momentum going." 
                     : 'You’re making progress. Choose the plan that fits your current career goals.'}
@@ -2420,16 +2478,15 @@ ${conversation}`;
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 {/* Free Tier */}
-                <div className="bg-theme-surface border border-theme p-8 rounded-3xl backdrop-blur-sm flex flex-col hover:border-red-500/30 transition-all group">
-                  <div className="mb-8">
+                <div className="bg-theme-surface border border-theme p-6 md:p-8 rounded-2xl md:rounded-3xl backdrop-blur-sm flex flex-col hover:border-red-500/30 transition-all group">
+                  <div className="mb-6 md:mb-8">
                     <h3 className="text-xl font-black uppercase italic mb-2 text-theme-secondary">Free</h3>
                     <div className="flex items-baseline gap-1">
                       <span className="text-3xl font-black text-theme-primary">$0</span>
                     </div>
-                    <p className="text-[10px] text-theme-secondary uppercase font-bold mt-1">Test the system</p>
                   </div>
                   
-                  <ul className="space-y-3 mb-10 flex-1">
+                  <ul className="space-y-3 mb-8 md:mb-10 flex-1">
                     <li className="flex items-center gap-3 text-theme-secondary text-xs">
                       <CheckCircle2 size={14} className="text-theme-secondary" />
                       2 simulations / month
@@ -2470,11 +2527,11 @@ ${conversation}`;
                 </div>
 
                 {/* Beginner Tier */}
-                <div className="bg-theme-surface border border-theme p-8 rounded-3xl backdrop-blur-sm flex flex-col hover:border-red-500/50 transition-all group relative">
+                <div className="bg-theme-surface border border-theme p-6 md:p-8 rounded-2xl md:rounded-3xl backdrop-blur-sm flex flex-col hover:border-red-500/50 transition-all group relative">
                   <div className="absolute -top-3 left-6 bg-red-600 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest text-white">
                     30-Day Unlock
                   </div>
-                  <div className="mb-8">
+                  <div className="mb-6 md:mb-8">
                     <h3 className="text-xl font-black uppercase italic mb-2 text-red-400">Beginner</h3>
                     <div className="flex items-baseline gap-1">
                       <span className="text-3xl font-black text-theme-primary">$5</span>
@@ -2482,7 +2539,7 @@ ${conversation}`;
                     <p className="text-[10px] text-theme-secondary uppercase font-bold mt-1">Short-term burst</p>
                   </div>
                   
-                  <ul className="space-y-3 mb-10 flex-1">
+                  <ul className="space-y-3 mb-8 md:mb-10 flex-1">
                     <li className="flex items-center gap-3 text-theme-secondary text-xs">
                       <CheckCircle2 size={14} className="text-red-500" />
                       Unlimited for 30 days
@@ -2521,11 +2578,11 @@ ${conversation}`;
                 </div>
 
                 {/* Pro Tier */}
-                <div className="bg-theme-surface border border-red-600/30 p-8 rounded-3xl backdrop-blur-sm flex flex-col hover:border-red-600/60 transition-all group relative">
+                <div className="bg-theme-surface border border-red-600/30 p-6 md:p-8 rounded-2xl md:rounded-3xl backdrop-blur-sm flex flex-col hover:border-red-600/60 transition-all group relative">
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-red-600 px-3 py-0.5 rounded-full text-[8px] font-black uppercase tracking-[0.2em] text-white">
                     Most Popular
                   </div>
-                  <div className="mb-8">
+                  <div className="mb-6 md:mb-8">
                     <h3 className="text-xl font-black uppercase italic mb-2 text-red-500">Pro</h3>
                     <div className="flex items-baseline gap-1">
                       <span className="text-3xl font-black text-theme-primary">${isAnnual ? '12' : '15'}</span>
@@ -2537,7 +2594,7 @@ ${conversation}`;
                     <p className="text-[10px] text-theme-secondary uppercase font-bold mt-1">Power users</p>
                   </div>
                   
-                  <ul className="space-y-3 mb-10 flex-1">
+                  <ul className="space-y-3 mb-8 md:mb-10 flex-1">
                     <li className="flex items-center gap-3 text-theme-secondary text-xs">
                       <CheckCircle2 size={14} className="text-red-600" />
                       Everything in Beginner
@@ -2584,11 +2641,11 @@ ${conversation}`;
                 </div>
 
                 {/* Elite Tier */}
-                <div className={`bg-theme-surface border border-theme p-8 rounded-3xl backdrop-blur-sm flex flex-col group transition-all opacity-70 grayscale relative overflow-hidden`}>
+                <div className={`bg-theme-surface border border-theme p-6 md:p-8 rounded-2xl md:rounded-3xl backdrop-blur-sm flex flex-col group transition-all opacity-70 grayscale relative overflow-hidden`}>
                   <div className="absolute top-4 right-4 bg-red-600/20 text-red-500 border border-red-500/30 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest">
                     Coming Soon
                   </div>
-                  <div className="mb-8">
+                  <div className="mb-6 md:mb-8">
                     <h3 className="text-xl font-black uppercase italic mb-2 text-theme-secondary">Elite</h3>
                     <div className="flex items-baseline gap-1">
                       <span className="text-3xl font-black text-theme-secondary">$49</span>
@@ -2597,7 +2654,7 @@ ${conversation}`;
                     <p className="text-[10px] text-theme-secondary uppercase font-bold mt-1">Future Premium Features</p>
                   </div>
                   
-                  <ul className="space-y-3 mb-10 flex-1">
+                  <ul className="space-y-3 mb-8 md:mb-10 flex-1">
                     <li className="flex items-center gap-3 text-theme-secondary text-xs">
                       <CheckCircle2 size={14} className="text-theme-secondary" />
                       Everything in Pro
@@ -2669,7 +2726,7 @@ ${conversation}`;
                             setIndustry(e.target.value);
                             setJobTitle('');
                           }}
-                          className="w-full bg-theme-input border border-theme rounded-2xl px-6 py-6 outline-none focus:border-red-500 transition-all appearance-none text-sm font-bold uppercase tracking-widest cursor-pointer hover:border-red-500/50"
+                          className="w-full bg-theme-input border border-theme rounded-2xl px-6 py-4 md:py-6 outline-none focus:border-red-500 transition-all appearance-none text-sm font-bold uppercase tracking-widest cursor-pointer hover:border-red-500/50"
                         >
                           <option value="" disabled className="bg-theme-surface">Select Industry...</option>
                           {Object.keys(suggestedRoles).map((ind) => (
@@ -2694,7 +2751,7 @@ ${conversation}`;
                           placeholder="Search or enter any job title..."
                           value={jobTitle}
                           onChange={(e) => setJobTitle(e.target.value)}
-                          className="w-full pl-16 pr-6 py-6 bg-theme-input border border-theme rounded-2xl focus:border-red-600 outline-none transition-all text-lg font-bold placeholder:text-theme-secondary/50 text-theme-primary"
+                          className="w-full pl-16 pr-6 py-4 md:py-6 bg-theme-input border border-theme rounded-2xl focus:border-red-600 outline-none transition-all text-base md:text-lg font-bold placeholder:text-theme-secondary/50 text-theme-primary"
                         />
                       </div>
 
@@ -2730,33 +2787,33 @@ ${conversation}`;
                       )}
                     </div>
 
-                    <div className="space-y-4 pt-4 border-t border-theme">
+                    <div className="space-y-3 md:space-y-4 pt-4 border-t border-theme">
                       <label className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500 flex items-center gap-2">
                         <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
                         3. Interviewer Voice
                       </label>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-3 md:gap-4">
                         <button
                           onClick={() => setSelectedVoice('Kore')}
-                          className={`flex items-center justify-center gap-3 px-6 py-4 rounded-2xl border transition-all ${
+                          className={`flex items-center justify-center gap-2 md:gap-3 px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl border transition-all ${
                             selectedVoice === 'Kore'
                               ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-900/20'
                               : 'bg-theme-input border-theme text-theme-secondary hover:border-red-500/50 hover:text-theme-primary'
                           }`}
                         >
-                          <User size={18} />
-                          <span className="text-xs font-black uppercase tracking-widest">Female (Kore)</span>
+                          <User size={16} className="md:size-[18px]" />
+                          <span className="text-[10px] md:text-xs font-black uppercase tracking-widest">Female (Kore)</span>
                         </button>
                         <button
                           onClick={() => setSelectedVoice('Zephyr')}
-                          className={`flex items-center justify-center gap-3 px-6 py-4 rounded-2xl border transition-all ${
+                          className={`flex items-center justify-center gap-2 md:gap-3 px-4 md:px-6 py-3 md:py-4 rounded-xl md:rounded-2xl border transition-all ${
                             selectedVoice === 'Zephyr'
                               ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-900/20'
                               : 'bg-theme-input border-theme text-theme-secondary hover:border-red-500/50 hover:text-theme-primary'
                           }`}
                         >
-                          <User size={18} />
-                          <span className="text-xs font-black uppercase tracking-widest">Male (Zephyr)</span>
+                          <User size={16} className="md:size-[18px]" />
+                          <span className="text-[10px] md:text-xs font-black uppercase tracking-widest">Male (Zephyr)</span>
                         </button>
                       </div>
                     </div>
@@ -2889,25 +2946,25 @@ ${conversation}`;
                 </div>
 
                 {/* Right Column: Resume & Start */}
-                <div className="lg:col-span-1 space-y-8">
-                  <div className="bg-theme-surface border border-theme rounded-3xl p-8 space-y-6">
-                    <div className="space-y-4">
+                <div className="lg:col-span-1 space-y-6 md:space-y-8">
+                  <div className="bg-theme-surface border border-theme rounded-2xl md:rounded-3xl p-6 md:p-8 space-y-4 md:space-y-6">
+                    <div className="space-y-3 md:space-y-4">
                       <label className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500 flex items-center gap-2">
                         <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
                         3. Interaction Mode
                       </label>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-3 md:gap-4">
                         <button
                           id="interactionModeText"
                           onClick={() => setInteractionMode('text')}
-                          className={`flex items-center justify-center gap-3 p-6 rounded-2xl border transition-all ${
+                          className={`flex items-center justify-center gap-2 md:gap-3 p-4 md:p-6 rounded-xl md:rounded-2xl border transition-all ${
                             interactionMode === 'text'
                               ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-900/20'
                               : 'bg-theme-input border-theme text-theme-secondary hover:border-red-500/50'
                           }`}
                         >
-                          <Keyboard size={20} />
-                          <span className="text-[10px] font-black uppercase tracking-widest">Type (Text)</span>
+                          <Keyboard size={18} className="md:size-[20px]" />
+                          <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest">Type (Text)</span>
                         </button>
                         <button
                           id="interactionModeVoice"
@@ -2916,20 +2973,20 @@ ${conversation}`;
                               setInteractionMode('voice');
                             } else {
                               trackEvent('upgrade_prompt', { feature: 'voice' });
-                              alert('Voice Interaction is a Premium feature. Please upgrade to access.');
+                              showNotification('Voice Interaction is a Premium feature. Please upgrade to access.', 'info');
                             }
                           }}
-                          className={`flex items-center justify-center gap-3 p-6 rounded-2xl border transition-all relative ${
+                          className={`flex items-center justify-center gap-2 md:gap-3 p-4 md:p-6 rounded-xl md:rounded-2xl border transition-all relative ${
                             interactionMode === 'voice'
                               ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-900/20'
                               : 'bg-theme-input border-theme text-theme-secondary hover:border-red-500/50'
                           }`}
                         >
-                          <Mic size={20} />
-                          <span className="text-[10px] font-black uppercase tracking-widest">Talk (Voice)</span>
+                          <Mic size={18} className="md:size-[20px]" />
+                          <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest">Talk (Voice)</span>
                           {!(selectedPlan === 'pro' || selectedPlan === 'elite') && (
-                            <div className="absolute -top-2 -right-2 bg-red-600 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest text-white border border-black shadow-lg flex items-center gap-1">
-                            <Zap size={8} />
+                            <div className="absolute -top-1.5 -right-1.5 md:-top-2 md:-right-2 bg-red-600 text-[7px] md:text-[8px] font-black px-1.5 md:px-2 py-0.5 rounded-full uppercase tracking-widest text-white border border-black shadow-lg flex items-center gap-1">
+                            <Zap size={7} className="md:size-[8px]" />
                             Premium
                           </div>
                           )}
@@ -2937,7 +2994,7 @@ ${conversation}`;
                       </div>
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="space-y-3 md:space-y-4">
                       <label className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500 flex items-center gap-2">
                         <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
                         4. Resume Upload
@@ -2953,28 +3010,28 @@ ${conversation}`;
                         />
                         <label 
                           htmlFor="resume-upload"
-                          className={`flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-2xl cursor-pointer transition-all ${
+                          className={`flex flex-col items-center justify-center p-6 md:p-8 border-2 border-dashed rounded-xl md:rounded-2xl cursor-pointer transition-all ${
                             resumeFile 
                               ? 'border-emerald-500/50 bg-emerald-500/5' 
                               : 'border-theme bg-theme-surface hover:border-red-500/50 hover:bg-theme-surface-hover'
                           }`}
                         >
                           {isEnhancingResume ? (
-                            <div className="flex flex-col items-center gap-3">
-                              <RefreshCw className="animate-spin text-red-500" size={32} />
-                              <p className="text-[10px] font-black uppercase tracking-widest text-red-500">Optimizing your resume...</p>
+                            <div className="flex flex-col items-center gap-2 md:gap-3">
+                              <RefreshCw size={24} className="animate-spin text-red-500 md:size-[32px]" />
+                              <p className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-red-500">Optimizing...</p>
                             </div>
                           ) : resumeFile ? (
-                            <div className="flex flex-col items-center gap-3">
-                              <FileText className="text-emerald-500" size={32} />
-                              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500">{resumeFile.name}</p>
-                              <p className="text-[8px] text-theme-secondary uppercase font-bold">Click to replace</p>
+                            <div className="flex flex-col items-center gap-2 md:gap-3">
+                              <FileText size={24} className="text-emerald-500 md:size-[32px]" />
+                              <p className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-emerald-500 truncate max-w-[150px]">{resumeFile.name}</p>
+                              <p className="text-[7px] md:text-[8px] text-theme-secondary uppercase font-bold">Click to replace</p>
                             </div>
                           ) : (
-                            <div className="flex flex-col items-center gap-3">
-                              <Upload className="text-theme-secondary opacity-50 group-hover:text-red-500" size={32} />
-                              <p className="text-[10px] font-black uppercase tracking-widest text-theme-secondary">Upload Resume</p>
-                              <p className="text-[8px] text-theme-secondary opacity-50 uppercase font-bold text-center">PDF, DOCX, TXT (MAX 5MB)</p>
+                            <div className="flex flex-col items-center gap-2 md:gap-3">
+                              <Upload size={24} className="text-theme-secondary opacity-50 group-hover:text-red-500 md:size-[32px]" />
+                              <p className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-theme-secondary">Upload Resume</p>
+                              <p className="text-[7px] md:text-[8px] text-theme-secondary opacity-50 uppercase font-bold text-center">PDF, DOCX, TXT</p>
                             </div>
                           )}
                         </label>
@@ -3002,17 +3059,17 @@ ${conversation}`;
                     </div>
                   </div>
 
-                  <div className="pt-4">
+                  <div className="pt-2 md:pt-4">
                     <Tooltip content="Launch the career coach simulation">
                       <button 
                         onClick={startInterview}
                         disabled={!jobTitle}
-                        className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.3em] py-8 rounded-3xl shadow-2xl shadow-red-900/40 transition-all flex flex-col items-center justify-center gap-2 border border-red-500/20 group"
+                        className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.3em] py-5 md:py-8 rounded-2xl md:rounded-3xl shadow-2xl shadow-red-900/40 transition-all flex flex-col items-center justify-center gap-1 md:gap-2 border border-red-500/20 group"
                       >
-                        <span className="text-xl">Start Practice Session</span>
+                        <span className="text-base md:text-xl">Start Practice Session</span>
                         <div className="flex items-center gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
-                          <span className="text-[10px] tracking-widest">Prepare for {jobTitle || 'Role'}</span>
-                          <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                          <span className="text-[8px] md:text-[10px] tracking-widest">Prepare for {jobTitle || 'Role'}</span>
+                          <ChevronRight size={12} className="md:size-[16px] group-hover:translate-x-1 transition-transform" />
                         </div>
                       </button>
                     </Tooltip>
@@ -3020,22 +3077,22 @@ ${conversation}`;
                 </div>
               </div>
 
-              <div className="mt-16 grid grid-cols-4 gap-6">
-                <div className="p-8 bg-theme-surface border border-theme rounded-3xl text-center group hover:border-red-500 transition-colors">
-                  <Award className="mx-auto text-red-500 mb-4" size={32} />
-                  <p className="text-[10px] font-black uppercase text-theme-secondary tracking-widest group-hover:text-theme-primary transition-colors">Expert Tips</p>
+              <div className="mt-12 md:mt-16 grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                <div className="p-4 md:p-8 bg-theme-surface border border-theme rounded-2xl md:rounded-3xl text-center group hover:border-red-500 transition-colors">
+                  <Award className="mx-auto text-red-500 mb-2 md:mb-4 w-6 h-6 md:w-8 md:h-8" />
+                  <p className="text-[9px] md:text-[10px] font-black uppercase text-theme-secondary tracking-widest group-hover:text-theme-primary transition-colors">Expert Tips</p>
                 </div>
-                <div className="p-8 bg-theme-surface border border-theme rounded-3xl text-center group hover:border-red-500 transition-colors">
-                  <CheckCircle2 className="mx-auto text-red-500 mb-4" size={32} />
-                  <p className="text-[10px] font-black uppercase text-theme-secondary tracking-widest group-hover:text-theme-primary transition-colors">Skill Validation</p>
+                <div className="p-4 md:p-8 bg-theme-surface border border-theme rounded-2xl md:rounded-3xl text-center group hover:border-red-500 transition-colors">
+                  <CheckCircle2 className="mx-auto text-red-500 mb-2 md:mb-4 w-6 h-6 md:w-8 md:h-8" />
+                  <p className="text-[9px] md:text-[10px] font-black uppercase text-theme-secondary tracking-widest group-hover:text-theme-primary transition-colors">Skill Validation</p>
                 </div>
-                <div className="p-8 bg-theme-surface border border-theme rounded-3xl text-center group hover:border-red-500 transition-colors">
-                  <Target className="mx-auto text-red-500 mb-4" size={32} />
-                  <p className="text-[10px] font-black uppercase text-theme-secondary tracking-widest group-hover:text-theme-primary transition-colors">Goal Focused</p>
+                <div className="p-4 md:p-8 bg-theme-surface border border-theme rounded-2xl md:rounded-3xl text-center group hover:border-red-500 transition-colors">
+                  <Target className="mx-auto text-red-500 mb-2 md:mb-4 w-6 h-6 md:w-8 md:h-8" />
+                  <p className="text-[9px] md:text-[10px] font-black uppercase text-theme-secondary tracking-widest group-hover:text-theme-primary transition-colors">Goal Focused</p>
                 </div>
-                <div className="p-8 bg-theme-surface border border-theme rounded-3xl text-center group hover:border-red-500 transition-colors">
-                  <RefreshCw className="mx-auto text-red-500 mb-4" size={32} />
-                  <p className="text-[10px] font-black uppercase text-theme-secondary tracking-widest group-hover:text-theme-primary transition-colors">Infinite Retries</p>
+                <div className="p-4 md:p-8 bg-theme-surface border border-theme rounded-2xl md:rounded-3xl text-center group hover:border-red-500 transition-colors">
+                  <RefreshCw className="mx-auto text-red-500 mb-2 md:mb-4 w-6 h-6 md:w-8 md:h-8" />
+                  <p className="text-[9px] md:text-[10px] font-black uppercase text-theme-secondary tracking-widest group-hover:text-theme-primary transition-colors">Infinite Retries</p>
                 </div>
               </div>
             </motion.div>
@@ -3048,41 +3105,41 @@ ${conversation}`;
               className="flex flex-col flex-1 min-h-0 pt-4"
             >
               {/* Interview Header (Session Header) */}
-              <div className="bg-theme-main flex flex-col md:flex-row md:items-center justify-between mb-6 px-4 py-6 border-b border-theme gap-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-red-600 flex items-center justify-center shadow-xl shadow-red-900/20 border border-red-500/20">
-                    <Briefcase size={24} className="text-white" />
+              <div className="bg-theme-main flex flex-col md:flex-row md:items-center justify-between mb-2 px-3 py-3 md:px-4 md:py-4 border-b border-theme gap-4">
+                <div className="flex items-center gap-3 md:gap-4">
+                  <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-red-600 flex items-center justify-center shadow-xl shadow-red-900/20 border border-red-500/20 shrink-0">
+                    <Briefcase size={16} className="md:size-[20px]" />
                   </div>
-                  <div>
-                    <h2 className="text-2xl font-black uppercase tracking-tighter text-theme-primary leading-none">{jobTitle}</h2>
-                    <div className="text-[10px] font-black uppercase tracking-[0.3em] text-red-500 mt-2 flex items-center gap-2">
+                  <div className="min-w-0">
+                    <h2 className="text-lg md:text-xl font-black uppercase tracking-tighter text-theme-primary leading-none truncate">{jobTitle}</h2>
+                    <div className="text-[8px] md:text-[9px] font-black uppercase tracking-[0.3em] text-red-500 mt-1 md:mt-1.5 flex items-center gap-2">
                       <div className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
                       Live Practice Session
                     </div>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 md:gap-6 w-full md:w-auto">
                   {/* Progress Section */}
-                  <div className="flex flex-col items-start md:items-end">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-theme-secondary mb-1.5">Interview Progress</p>
-                    <div className="flex items-center gap-3">
-                      <div className="w-32 h-2 bg-theme-surface rounded-full overflow-hidden border border-theme">
+                  <div className="flex flex-col items-start md:items-end w-full sm:w-auto">
+                    <p className="text-[8px] md:text-[9px] font-black uppercase tracking-widest text-theme-secondary mb-1">Interview Progress</p>
+                    <div className="flex items-center gap-2 md:gap-3 w-full sm:w-auto">
+                      <div className="flex-1 sm:w-24 md:w-32 h-1 md:h-1.5 bg-theme-surface rounded-full overflow-hidden border border-theme">
                         <motion.div 
                           initial={{ width: 0 }}
                           animate={{ width: `${(questionsAnswered / interviewLength) * 100}%` }}
                           className="h-full bg-red-600 shadow-[0_0_10px_rgba(220,38,38,0.4)] transition-all duration-500" 
                         />
                       </div>
-                      <span className="text-xs font-black text-theme-primary">{questionsAnswered} / {interviewLength}</span>
+                      <span className="text-xs font-black text-theme-primary shrink-0">{questionsAnswered} / {interviewLength}</span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
                     <Tooltip content="Report a glitch and refund session (Limit: 3 per day)">
                       <button 
                         onClick={reportGlitch}
-                        className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-theme-secondary hover:text-theme-primary bg-theme-surface border border-theme rounded-xl transition-all hover:shadow-md"
+                        className="flex-1 sm:flex-none px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-theme-secondary hover:text-theme-primary bg-theme-surface border border-theme rounded-xl transition-all hover:shadow-md"
                       >
                         Report Glitch
                       </button>
@@ -3091,14 +3148,14 @@ ${conversation}`;
                     <Tooltip content={interviewCompleted ? "Interview finished! Click to see your report." : "End current session and generate your performance report"}>
                       <button 
                         onClick={endInterview}
-                        className={`px-6 py-2 text-[10px] font-black uppercase tracking-[0.2em] rounded-xl shadow-lg transition-all flex items-center gap-2 border group ${
+                        className={`flex-1 sm:flex-none px-4 py-1.5 text-[9px] font-black uppercase tracking-[0.2em] rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 border group ${
                           interviewCompleted 
                             ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500 shadow-emerald-900/20 animate-pulse' 
                             : 'bg-red-600 hover:bg-red-700 text-white border-red-500/20 shadow-red-900/40'
                         }`}
                       >
                         <LogOut size={14} className="group-hover:-translate-x-0.5 transition-transform" />
-                        {interviewCompleted ? 'Finish & Report' : 'End Session'}
+                        {interviewCompleted ? 'Finish' : 'End'}
                       </button>
                     </Tooltip>
                   </div>
@@ -3113,112 +3170,139 @@ ${conversation}`;
                       <div className="flex justify-center mb-4">
                         <div className="bg-red-600/10 border border-red-600/20 px-4 py-1.5 rounded-full flex items-center gap-2">
                           <div className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
-                          <p className="text-[10px] font-black text-red-500 uppercase tracking-[0.2em]">Trial Session Active</p>
+                          <p className="text-[9px] font-black text-red-500 uppercase tracking-[0.2em]">Trial Session Active</p>
                         </div>
                       </div>
                     )}
                     
 
 
-                    {messages.map((msg, i) => (
-                  <motion.div 
-                    key={i}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div className={`max-w-[85%] flex gap-3 md:gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                      <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center flex-shrink-0 border shadow-sm ${
-                        msg.role === 'user' ? 'bg-red-600 border-red-500/20' : 'bg-theme-surface border-theme'
-                      }`}>
-                        {msg.role === 'user' ? <User size={16} className="text-white" /> : <Bot size={16} className="text-red-500" />}
-                      </div>
-                      <div className={`relative group p-4 md:p-6 rounded-3xl shadow-2xl transition-all ${
-                        msg.role === 'user' 
-                          ? 'bg-red-600/5 border-2 border-red-600/20 text-theme-primary rounded-tr-none' 
-                          : 'bg-theme-surface border-2 border-theme text-theme-primary rounded-tl-none'
-                      }`}>
-                        <div className={`markdown-body text-base md:text-lg leading-relaxed font-semibold ${theme === 'dark' ? 'prose-invert' : ''}`}>
-                          <ReactMarkdown>{msg.text}</ReactMarkdown>
+                    {messages.map((msg, i) => {
+                      const ts = msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp);
+                      const timeStr = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      
+                      return (
+                        <motion.div 
+                          key={i}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div className={`max-w-[92%] flex gap-3 md:gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                            <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center flex-shrink-0 border shadow-sm ${
+                              msg.role === 'user' ? 'bg-red-600 border-red-500/20' : 'bg-theme-surface border-theme'
+                            }`}>
+                              {msg.role === 'user' ? <User size={16} className="text-white" /> : <Bot size={16} className="text-red-500" />}
+                            </div>
+                            
+                            <div className="flex flex-col gap-1.5">
+                              <div className={`flex items-center gap-2 px-1 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                                <span className="text-[10px] font-black uppercase tracking-[0.15em] text-theme-secondary opacity-60">
+                                  {msg.role === 'user' ? 'You' : 'Coach'}
+                                </span>
+                                <span className="text-[9px] font-bold text-theme-secondary opacity-30">
+                                  {timeStr}
+                                </span>
+                              </div>
+                              
+                              <div className={`relative group p-3 md:p-4 rounded-xl md:rounded-2xl shadow-xl transition-all ${
+                                msg.role === 'user' 
+                                  ? 'bg-red-600/10 border border-red-600/20 text-theme-primary rounded-tr-none' 
+                                  : 'bg-theme-surface border border-theme text-theme-primary rounded-tl-none'
+                              }`}>
+                                <div className={`markdown-body text-xs md:text-sm leading-relaxed font-semibold ${theme === 'dark' ? 'prose-invert' : ''}`}>
+                                  <ReactMarkdown>{msg.text}</ReactMarkdown>
+                                </div>
+                                
+                                <div className={`flex items-center gap-3 mt-4 opacity-0 group-hover:opacity-100 transition-opacity ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                  <button 
+                                    onClick={() => copyToClipboard(msg.text)}
+                                    className="p-1.5 hover:bg-theme-surface-hover rounded-md text-theme-secondary transition-colors"
+                                    title="Copy message"
+                                  >
+                                    <Copy size={12} />
+                                  </button>
+                                  {msg.role === 'model' && (
+                                    <button 
+                                      onClick={() => speak(msg.text, true)}
+                                      className="p-1.5 hover:bg-theme-surface-hover rounded-md text-theme-secondary transition-colors"
+                                      title="Read aloud"
+                                    >
+                                      <Volume2 size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                    
+                    {isTyping && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex justify-start"
+                      >
+                        <div className="max-w-[85%] flex gap-3 md:gap-4 flex-row">
+                          <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-theme-surface border border-theme flex items-center justify-center flex-shrink-0 shadow-sm">
+                            <Bot size={16} className="text-red-500" />
+                          </div>
+                          
+                          <div className="flex flex-col gap-1.5">
+                            <div className="flex items-center gap-2 px-1">
+                              <span className="text-[10px] font-black uppercase tracking-[0.15em] text-theme-secondary opacity-60">
+                                Coach
+                              </span>
+                              <span className="text-[9px] font-bold text-theme-secondary opacity-30 italic">
+                                thinking...
+                              </span>
+                            </div>
+                            
+                            <div className="px-4 py-3 rounded-xl bg-theme-surface border border-theme text-theme-primary rounded-tl-none shadow-md flex items-center gap-3">
+                              <div className="flex gap-1.5">
+                                {[0, 1, 2].map((i) => (
+                                  <motion.div
+                                    key={i}
+                                    animate={{ 
+                                      opacity: [0.4, 1, 0.4],
+                                      y: [0, -2, 0]
+                                    }}
+                                    transition={{ 
+                                      duration: 1.4, 
+                                      repeat: Infinity, 
+                                      delay: i * 0.2,
+                                      ease: "easeInOut"
+                                    }}
+                                    className="w-1.5 h-1.5 bg-red-500 rounded-full"
+                                  />
+                                ))}
+                              </div>
+                              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-theme-secondary opacity-40 italic">
+                                Coach is analyzing...
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        
-                        <div className={`flex items-center gap-3 mt-4 opacity-0 group-hover:opacity-100 transition-opacity ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                          <button 
-                            onClick={() => copyToClipboard(msg.text)}
-                            className="p-1.5 hover:bg-theme-surface-hover rounded-md text-theme-secondary transition-colors"
-                            title="Copy message"
-                          >
-                            <Copy size={12} />
-                          </button>
-                          {msg.role === 'model' && (
-                            <button 
-                              onClick={() => speak(msg.text, true)}
-                              className="p-1.5 hover:bg-theme-surface-hover rounded-md text-theme-secondary transition-colors"
-                              title="Read aloud"
-                            >
-                              <Volume2 size={12} />
-                            </button>
-                          )}
-                          <p className="text-[9px] font-bold uppercase tracking-widest opacity-40">
-                            {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-                {isTyping && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex justify-start"
-                  >
-                    <div className="flex items-end gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-theme-surface border border-theme flex items-center justify-center flex-shrink-0 shadow-sm">
-                        <Bot size={14} className="text-red-500" />
-                      </div>
-                      <div className="px-4 py-3 rounded-2xl bg-theme-surface border border-theme text-theme-primary rounded-bl-none shadow-md flex items-center gap-3">
-                        <div className="flex gap-1.5">
-                          {[0, 1, 2].map((i) => (
-                            <motion.div
-                              key={i}
-                              animate={{ 
-                                opacity: [0.4, 1, 0.4],
-                                y: [0, -2, 0]
-                              }}
-                              transition={{ 
-                                duration: 1.4, 
-                                repeat: Infinity, 
-                                delay: i * 0.2,
-                                ease: "easeInOut"
-                              }}
-                              className="w-1.5 h-1.5 bg-red-500 rounded-full"
-                            />
-                          ))}
-                        </div>
-                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-theme-secondary opacity-40 italic">
-                          Coach is thinking...
-                        </span>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
+                      </motion.div>
+                    )}
                     <div ref={chatEndRef} />
                   </div>
 
                   <div className="mt-auto pt-4 border-t border-theme">
-                    <form onSubmit={(e) => handleSendMessage(e)} className="flex gap-6 items-start">
+                    <form onSubmit={(e) => handleSendMessage(e)} className="flex gap-2 md:gap-4 items-start">
                       <div className="flex flex-col gap-2">
                         <button
                           type="button"
                           onClick={toggleListening}
-                          className={`w-20 h-20 rounded-2xl flex items-center justify-center transition-all border-2 ${
+                          className={`w-12 h-12 md:w-16 md:h-16 rounded-xl flex items-center justify-center transition-all border ${
                             isListening 
                               ? 'bg-red-600 border-red-400 animate-pulse shadow-xl shadow-red-900/40' 
                               : 'bg-theme-surface border-theme hover:border-red-500/50 shadow-md'
                           }`}
                         >
-                          <Mic size={32} className={isListening ? 'text-white' : 'text-theme-secondary'} />
+                          <Mic className={`${isListening ? 'text-white' : 'text-theme-secondary'} w-5 h-5 md:w-6 md:h-6`} />
                         </button>
                       </div>
 
@@ -3236,16 +3320,16 @@ ${conversation}`;
                               handleSendMessage(e);
                             }
                           }}
-                          className="w-full h-32 pl-6 pr-16 py-5 bg-theme-surface border-2 border-red-600 rounded-3xl focus:ring-2 focus:ring-red-600/20 outline-none transition-all text-lg text-theme-primary placeholder:text-theme-secondary/30 resize-none shadow-lg"
+                          className="w-full h-20 md:h-24 pl-4 md:pl-5 pr-12 md:pr-14 py-2 md:py-3 bg-theme-surface border border-red-600 rounded-xl md:rounded-2xl focus:ring-2 focus:ring-red-600/20 outline-none transition-all text-sm md:text-base text-theme-primary placeholder:text-theme-secondary/30 resize-none shadow-lg"
                         />
 
                         <button 
                           type="submit"
                           disabled={!input.trim() || isTyping}
                           aria-label="Send message"
-                          className="absolute right-4 bottom-4 w-12 h-12 bg-red-500/40 text-white rounded-2xl flex items-center justify-center hover:bg-red-600 disabled:opacity-30 transition-all shadow-lg backdrop-blur-sm"
+                          className="absolute right-3 bottom-3 md:right-4 md:bottom-4 w-10 h-10 md:w-12 md:h-12 bg-red-500/40 text-white rounded-xl md:rounded-2xl flex items-center justify-center hover:bg-red-600 disabled:opacity-30 transition-all shadow-lg backdrop-blur-sm"
                         >
-                          {isTyping ? <RefreshCw size={20} className="animate-spin" /> : <Send size={24} />}
+                          {isTyping ? <RefreshCw className="animate-spin w-4 h-4 md:w-5 md:h-5" /> : <Send className="w-5 h-5 md:w-6 md:h-6" />}
                         </button>
 
                         {showRetry && (
@@ -3254,7 +3338,7 @@ ${conversation}`;
                             onClick={() => {
                               setIsTyping(false);
                               setShowRetry(false);
-                              showNotification("AI is taking longer than usual. You can try sending your message again.", 'info');
+                              showNotification("The system is taking longer than usual. You can try sending your message again.", 'info');
                             }}
                             className="absolute -top-12 left-1/2 -translate-x-1/2 px-4 py-2 bg-theme-surface border border-theme rounded-full text-[10px] font-black uppercase tracking-widest text-red-500 shadow-xl flex items-center gap-2 hover:bg-theme-surface-hover transition-all whitespace-nowrap"
                           >
@@ -3264,25 +3348,25 @@ ${conversation}`;
                         )}
                       </div>
                     </form>
-                    <div className="flex justify-between items-center mt-6 px-2">
-                      <div className="flex items-center gap-4">
-                        <p className="text-[9px] text-theme-secondary opacity-50 uppercase tracking-[0.3em] font-black">
+                    <div className="flex flex-wrap justify-between items-center mt-4 md:mt-6 px-2 gap-4">
+                      <div className="flex flex-wrap items-center gap-3 md:gap-4">
+                        <p className="text-[8px] md:text-[9px] text-theme-secondary opacity-50 uppercase tracking-[0.3em] font-black">
                           Career Intelligence
                         </p>
                         <button 
                           onClick={exportTranscript}
-                          className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-theme-secondary hover:text-theme-primary transition-colors group"
+                          className="flex items-center gap-1.5 text-[8px] md:text-[9px] font-black uppercase tracking-widest text-theme-secondary hover:text-theme-primary transition-colors group"
                         >
-                          <Download size={12} className="group-hover:translate-y-0.5 transition-transform" />
+                          <Download className="group-hover:translate-y-0.5 transition-transform w-2.5 h-2.5 md:w-3 md:h-3" />
                           Export Transcript
                         </button>
-                        <div className="w-px h-3 bg-theme-secondary opacity-20" />
+                        <div className="hidden md:block w-px h-3 bg-theme-secondary opacity-20" />
                         <button 
                           onClick={() => setIsAudioEnabled(!isAudioEnabled)}
-                          className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest transition-colors group ${isAudioEnabled ? 'text-red-500' : 'text-theme-secondary hover:text-theme-primary'}`}
+                          className={`flex items-center gap-1.5 text-[8px] md:text-[9px] font-black uppercase tracking-widest transition-colors group ${isAudioEnabled ? 'text-red-500' : 'text-theme-secondary hover:text-theme-primary'}`}
                         >
-                          {isAudioEnabled ? <Volume2 size={12} /> : <VolumeX size={12} />}
-                          Audio Feedback: {isAudioEnabled ? 'ON' : 'OFF'}
+                          {isAudioEnabled ? <Volume2 className="w-2.5 h-2.5 md:w-3 md:h-3" /> : <VolumeX className="w-2.5 h-2.5 md:w-3 md:h-3" />}
+                          Audio: {isAudioEnabled ? 'ON' : 'OFF'}
                         </button>
                       </div>
                       <div className="flex gap-2">
@@ -3309,36 +3393,30 @@ ${conversation}`;
                     <h2 className="text-4xl font-black tracking-tighter uppercase italic mb-2 text-theme-primary">Admin Console</h2>
                     <p className="text-theme-secondary text-sm uppercase tracking-widest font-bold">Security & System Management</p>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex bg-theme-input p-1 rounded-xl border border-theme">
+                  <div className="flex items-center gap-4 overflow-x-auto pb-2 scrollbar-hide">
+                    <div className="flex bg-theme-input p-1 rounded-xl border border-theme shrink-0">
                       <button 
                         onClick={() => setAdminTab('overview')}
-                        className={`px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${adminTab === 'overview' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : 'text-theme-secondary hover:text-theme-primary'}`}
+                        className={`px-4 md:px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${adminTab === 'overview' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : 'text-theme-secondary hover:text-theme-primary'}`}
                       >
                         Overview
                       </button>
                       <button 
                         onClick={() => setAdminTab('stats')}
-                        className={`px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${adminTab === 'stats' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : 'text-theme-secondary hover:text-theme-primary'}`}
+                        className={`px-4 md:px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${adminTab === 'stats' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : 'text-theme-secondary hover:text-theme-primary'}`}
                       >
                         Statistics
                       </button>
                       <button 
                         onClick={() => setAdminTab('users')}
-                        className={`px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${adminTab === 'users' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : 'text-theme-secondary hover:text-theme-primary'}`}
+                        className={`px-4 md:px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${adminTab === 'users' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : 'text-theme-secondary hover:text-theme-primary'}`}
                       >
                         Users
-                      </button>
-                      <button 
-                        onClick={() => setAdminTab('debug')}
-                        className={`px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${adminTab === 'debug' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : 'text-theme-secondary hover:text-theme-primary'}`}
-                      >
-                        Debug
                       </button>
                     </div>
                     <button 
                       onClick={() => setStep('setup')}
-                      className="px-6 py-3 bg-theme-input border border-theme text-theme-primary text-xs font-black uppercase tracking-widest rounded-xl hover:bg-theme-surface-hover transition-all"
+                      className="px-4 md:px-6 py-3 bg-theme-input border border-theme text-theme-primary text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-theme-surface-hover transition-all shrink-0"
                     >
                       Exit
                     </button>
@@ -3469,16 +3547,21 @@ ${conversation}`;
 
                           <button 
                             onClick={() => {
-                              if (confirm('CRITICAL: This will delete all simulations and payments. Admin user will remain. Continue?')) {
-                                fetch(API_URL + '/api/admin/reset-db', { method: 'POST', headers: getAuthHeaders() })
-                                  .then(res => res.json())
-                                  .then(data => {
-                                    if (data.success) {
-                                      showNotification(data.message, 'success');
-                                      fetchActivityLogs();
-                                    }
-                                  });
-                              }
+                              setConfirmModal({
+                                isOpen: true,
+                                title: 'Reset Database',
+                                message: 'CRITICAL: This will delete all simulations and payments. Admin user will remain. Continue?',
+                                onConfirm: async () => {
+                                  fetch(API_URL + '/api/admin/reset-db', { method: 'POST', headers: getAuthHeaders() })
+                                    .then(res => res.json())
+                                    .then(data => {
+                                      if (data.success) {
+                                        showNotification(data.message, 'success');
+                                        fetchActivityLogs();
+                                      }
+                                    });
+                                }
+                              });
                             }}
                             className="w-full p-4 bg-red-600/5 border border-red-600/20 rounded-xl hover:bg-red-600 hover:text-white transition-all flex items-center justify-between group"
                           >
@@ -3509,7 +3592,7 @@ ${conversation}`;
                             </span>
                           </div>
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-theme-secondary">AI Engine</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-theme-secondary">Engine</span>
                             <span className="flex items-center gap-2 text-[10px] font-black text-emerald-500 uppercase">
                               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                               Operational
@@ -3597,7 +3680,7 @@ ${conversation}`;
                       </div>
                     </div>
                   </div>
-                ) : adminTab === 'stats' ? (
+                ) : (
                   <div className="space-y-12">
                     {/* Top Row: Performance & Distribution */}
                     <div className="grid lg:grid-cols-2 gap-8">
@@ -3757,106 +3840,6 @@ ${conversation}`;
                       </div>
                     </div>
                   </div>
-                ) : (
-                  <div className="grid lg:grid-cols-2 gap-8">
-                    {/* Left Column: Tracking Events */}
-                    <div className="space-y-6">
-                      <div className="p-6 bg-theme-input border border-theme rounded-2xl">
-                        <h3 className="text-lg font-black uppercase italic mb-6 flex items-center gap-2 text-theme-primary">
-                          <Activity className="text-red-500" size={20} />
-                          Live Tracking Events (GA4)
-                        </h3>
-                        <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
-                          {debugLogs.length === 0 ? (
-                            <p className="text-[10px] text-theme-secondary uppercase tracking-widest text-center py-10 opacity-50">No events tracked yet</p>
-                          ) : (
-                            debugLogs.map((log, idx) => (
-                              <div key={idx} className="p-4 bg-theme-surface-hover border border-theme rounded-xl">
-                                <div className="flex justify-between items-start mb-2">
-                                  <span className="text-[10px] font-black uppercase tracking-widest text-red-500">{log.name}</span>
-                                  <span className="text-[9px] text-theme-secondary opacity-50">{log.timestamp.toLocaleTimeString()}</span>
-                                </div>
-                                <pre className="text-[9px] font-mono text-theme-primary overflow-x-auto bg-black/20 p-2 rounded">
-                                  {JSON.stringify(log.params, null, 2)}
-                                </pre>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right Column: SEO & Metadata */}
-                    <div className="space-y-6">
-                      <div className="p-6 bg-theme-input border border-theme rounded-2xl">
-                        <h3 className="text-lg font-black uppercase italic mb-6 flex items-center gap-2 text-theme-primary">
-                          <Search className="text-red-500" size={20} />
-                          What Google Sees (SEO)
-                        </h3>
-                        <div className="space-y-4">
-                          <div className="p-4 bg-theme-surface-hover border border-theme rounded-xl">
-                            <p className="text-[9px] text-theme-secondary uppercase tracking-widest mb-1 font-black">Page Title</p>
-                            <p className="text-xs font-bold text-theme-primary">{document.title}</p>
-                          </div>
-                          <div className="p-4 bg-theme-surface-hover border border-theme rounded-xl">
-                            <p className="text-[9px] text-theme-secondary uppercase tracking-widest mb-1 font-black">Meta Description</p>
-                            <p className="text-xs text-theme-primary leading-relaxed">
-                              {document.querySelector('meta[name="description"]')?.getAttribute('content') || 'No description found'}
-                            </p>
-                          </div>
-                          <div className="p-4 bg-theme-surface-hover border border-theme rounded-xl">
-                            <p className="text-[9px] text-theme-secondary uppercase tracking-widest mb-1 font-black">GA4 Measurement ID</p>
-                            <p className="text-xs font-mono text-red-500">G-H2WWNHYJ2B</p>
-                          </div>
-                          <div className="p-4 bg-theme-surface-hover border border-theme rounded-xl">
-                            <p className="text-[9px] text-theme-secondary uppercase tracking-widest mb-1 font-black">Canonical URL</p>
-                            <p className="text-xs font-mono text-theme-secondary truncate">{window.location.origin}</p>
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <a 
-                              href={`https://search.google.com/test/rich-results?url=${encodeURIComponent(window.location.origin)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-4 bg-theme-surface-hover border border-theme rounded-xl hover:border-red-500 transition-colors text-center group"
-                            >
-                              <ExternalLink size={16} className="mx-auto mb-2 text-theme-secondary group-hover:text-red-500" />
-                              <span className="text-[9px] font-black uppercase tracking-widest text-theme-primary">Rich Results Test</span>
-                            </a>
-                            <a 
-                              href={`https://pagespeed.web.dev/report?url=${encodeURIComponent(window.location.origin)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-4 bg-theme-surface-hover border border-theme rounded-xl hover:border-red-500 transition-colors text-center group"
-                            >
-                              <ExternalLink size={16} className="mx-auto mb-2 text-theme-secondary group-hover:text-red-500" />
-                              <span className="text-[9px] font-black uppercase tracking-widest text-theme-primary">PageSpeed Insights</span>
-                            </a>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="p-6 bg-theme-input border border-theme rounded-2xl">
-                        <h3 className="text-lg font-black uppercase italic mb-4 flex items-center gap-2 text-theme-primary">
-                          <ShieldCheck className="text-red-500" size={20} />
-                          Security Headers
-                        </h3>
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-[10px]">
-                            <span className="text-theme-secondary uppercase tracking-widest">HTTPS</span>
-                            <span className="text-emerald-500 font-black">ENABLED</span>
-                          </div>
-                          <div className="flex justify-between text-[10px]">
-                            <span className="text-theme-secondary uppercase tracking-widest">HSTS</span>
-                            <span className="text-emerald-500 font-black">ACTIVE</span>
-                          </div>
-                          <div className="flex justify-between text-[10px]">
-                            <span className="text-theme-secondary uppercase tracking-widest">X-Frame-Options</span>
-                            <span className="text-theme-primary font-black">SAMEORIGIN</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
                 )}
               </div>
             </motion.div>
@@ -3865,23 +3848,23 @@ ${conversation}`;
               key="summary"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="max-w-3xl mx-auto mt-4 md:mt-8 px-4 md:px-0 pb-12"
+              className="max-w-3xl mx-auto mt-2 md:mt-8 px-2 md:px-0 pb-8 md:pb-12"
             >
-              <div className="bg-theme-surface border border-theme rounded-3xl p-6 md:p-12 shadow-2xl relative overflow-hidden">
+              <div className="bg-theme-surface border border-theme rounded-2xl md:rounded-3xl p-4 md:p-12 shadow-2xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-96 h-96 bg-red-600/5 rounded-full -mr-48 -mt-48 blur-3xl" />
                 
                 <div className="relative z-10">
-                  <div className="flex items-center gap-4 md:gap-6 mb-8 md:mb-12">
-                    <div className="w-12 h-12 md:w-20 md:h-20 bg-theme-surface-hover border border-theme rounded-2xl md:rounded-3xl flex items-center justify-center shadow-xl">
-                      <Briefcase className="text-red-600" size={32} />
+                  <div className="flex items-center gap-3 md:gap-6 mb-6 md:mb-12">
+                    <div className="w-10 h-10 md:w-20 md:h-20 bg-theme-surface-hover border border-theme rounded-xl md:rounded-3xl flex items-center justify-center shadow-xl">
+                      <Briefcase className="text-red-600" size={24} />
                     </div>
                     <div>
-                      <h2 className="text-2xl md:text-4xl font-black tracking-tighter uppercase italic text-theme-primary">Performance Report</h2>
-                      <p className="text-red-500 font-bold uppercase tracking-widest text-[10px] md:text-xs mt-1">{jobTitle}</p>
+                      <h2 className="text-xl md:text-4xl font-black tracking-tighter uppercase italic text-theme-primary">Performance Report</h2>
+                      <p className="text-red-500 font-bold uppercase tracking-widest text-[8px] md:text-xs mt-0.5 md:mt-1">{jobTitle}</p>
                     </div>
                   </div>
 
-                  {isGeneratingSummary ? (
+                  {(isGeneratingSummary && !summary) ? (
                     <div className="space-y-8 py-20">
                       <div className="flex flex-col items-center justify-center gap-6">
                         <RefreshCw className="text-red-600 animate-spin" size={64} />
@@ -3891,52 +3874,59 @@ ${conversation}`;
                   ) : (
                     <div className="space-y-10">
                       <div className={`prose ${theme === 'dark' ? 'prose-invert' : ''} max-w-none relative`}>
-                        <div className="whitespace-pre-wrap text-theme-primary leading-relaxed text-base md:text-lg font-medium border-l-2 border-red-600 pl-4 md:pl-8 mb-12">
-                          {summary}
+                        <div className={`markdown-body text-theme-primary leading-relaxed text-base md:text-lg font-medium border-l-2 border-red-600 pl-4 md:pl-8 mb-12 ${theme === 'dark' ? 'prose-invert' : ''}`}>
+                          <ReactMarkdown>{summary}</ReactMarkdown>
+                          {isGeneratingSummary && (
+                            <span className="inline-block w-2 h-4 bg-red-600 animate-pulse ml-1" />
+                          )}
                         </div>
                         
                         {/* Scroll Indicator - More prominent */}
-                        <motion.div 
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: [0, 1, 0] }}
-                          transition={{ duration: 2, repeat: Infinity }}
-                          className="absolute -bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 md:hidden"
-                        >
-                          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500">Scroll for Feedback</span>
-                          <ChevronDown size={20} className="text-red-500 animate-bounce" />
-                        </motion.div>
+                        {!isGeneratingSummary && (
+                          <motion.div 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: [0, 1, 0] }}
+                            transition={{ duration: 2, repeat: Infinity }}
+                            className="absolute -bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 md:hidden"
+                          >
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500">Scroll for Feedback</span>
+                            <ChevronDown size={20} className="text-red-500 animate-bounce" />
+                          </motion.div>
+                        )}
                       </div>
 
-                      <div className="pt-8 md:pt-12 border-t border-theme flex flex-col sm:flex-row gap-4 sm:gap-6">
-                        <button
-                          onClick={() => {
-                            setSummary('');
-                            setMessages([]);
-                            setStep('setup');
-                          }}
-                          className="flex-1 py-4 bg-theme-surface-hover hover:opacity-80 text-theme-primary text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border border-theme flex items-center justify-center gap-2"
-                        >
-                          <Plus size={14} />
-                          New Session
-                        </button>
-                        <button
-                          onClick={() => setIsScheduling(true)}
-                          className="flex-1 py-4 bg-theme-surface-hover hover:opacity-80 text-theme-primary text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border border-theme flex items-center justify-center gap-2"
-                        >
-                          <Clock size={14} />
-                          Schedule
-                        </button>
-                        <button
-                          onClick={() => {
-                            setIsExporting(true);
-                            setTimeout(() => setIsExporting(false), 2000);
-                          }}
-                          className="flex-1 py-4 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2"
-                        >
-                          <Download size={14} />
-                          {isExporting ? 'Exporting...' : 'Export Report'}
-                        </button>
-                      </div>
+                      {!isGeneratingSummary && (
+                        <div className="pt-8 md:pt-12 border-t border-theme flex flex-col sm:flex-row gap-4 sm:gap-6">
+                          <button
+                            onClick={() => {
+                              setSummary('');
+                              setMessages([]);
+                              setStep('setup');
+                            }}
+                            className="flex-1 py-4 bg-theme-surface-hover hover:opacity-80 text-theme-primary text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border border-theme flex items-center justify-center gap-2"
+                          >
+                            <Plus size={14} />
+                            New Session
+                          </button>
+                          <button
+                            onClick={() => setIsScheduling(true)}
+                            className="flex-1 py-4 bg-theme-surface-hover hover:opacity-80 text-theme-primary text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border border-theme flex items-center justify-center gap-2"
+                          >
+                            <Clock size={14} />
+                            Schedule
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsExporting(true);
+                              setTimeout(() => setIsExporting(false), 2000);
+                            }}
+                            className="flex-1 py-4 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2"
+                          >
+                            <Download size={14} />
+                            {isExporting ? 'Exporting...' : 'Export Report'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3948,28 +3938,6 @@ ${conversation}`;
       </main>
 
       {/* Global UI Elements (Modals & Notifications) */}
-      <AnimatePresence>
-        {notification && (
-          <motion.div
-            initial={{ opacity: 0, y: 50, x: '-50%' }}
-            animate={{ opacity: 1, y: 0, x: '-50%' }}
-            exit={{ opacity: 0, y: 50, x: '-50%' }}
-            className={`fixed bottom-8 left-1/2 z-[1001] px-6 py-4 rounded-2xl shadow-2xl border flex items-center gap-3 w-[calc(100%-2rem)] max-w-[400px] ${
-              notification.type === 'success' ? 'bg-emerald-500 text-white border-emerald-400' :
-              notification.type === 'error' ? 'bg-red-500 text-white border-red-400' :
-              'bg-theme-surface border-theme text-theme-primary'
-            }`}
-          >
-            {notification.type === 'success' && <CheckCircle2 size={20} className="text-white" />}
-            {notification.type === 'error' && <AlertCircle size={20} className="text-white" />}
-            {notification.type === 'info' && <Info size={20} className="text-red-500" />}
-            <p className="text-sm font-bold uppercase tracking-widest">{notification.message}</p>
-            <button onClick={() => setNotification(null)} className="ml-auto p-1 hover:opacity-80 rounded-full">
-              <X size={16} />
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <Modal
         isOpen={!!confirmModal?.isOpen}
@@ -4114,7 +4082,7 @@ ${conversation}`;
                           : 'bg-theme-input border border-theme text-theme-primary rounded-tl-none'
                       }`}>
                         <p className="text-[8px] font-black uppercase tracking-widest mb-2 opacity-50">
-                          {msg.role === 'user' ? 'You' : 'AI Interviewer'}
+                          {msg.role === 'user' ? 'You' : 'Interviewer'}
                         </p>
                         {msg.text}
                       </div>
@@ -4125,6 +4093,7 @@ ${conversation}`;
                     <p className="text-[10px] font-black uppercase tracking-widest text-theme-secondary">No transcript available for this session.</p>
                   </div>
                 )}
+                <div ref={simulationEndRef} />
               </div>
             </div>
 
@@ -4154,6 +4123,26 @@ ${conversation}`;
             <div>
               <h3 className="text-lg font-black uppercase italic text-theme-primary">Profile & Preferences</h3>
               <p className="text-[10px] text-theme-secondary font-bold uppercase tracking-widest">Manage your account security and alerts</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-theme-secondary">Profile Picture</h3>
+            <div className="bg-theme-input border border-theme rounded-2xl p-6 flex flex-col items-center gap-4">
+              <div className="relative group">
+                <div className="w-24 h-24 rounded-full border-4 border-theme overflow-hidden bg-theme-surface flex items-center justify-center shadow-xl">
+                  {user?.profile_picture ? (
+                    <img src={user.profile_picture} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <User size={40} className="text-theme-secondary opacity-30" />
+                  )}
+                </div>
+                <label className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer rounded-full">
+                  <Camera size={24} className="text-white" />
+                  <input type="file" className="hidden" accept="image/*" onChange={handleProfilePictureUpload} />
+                </label>
+              </div>
+              <p className="text-[10px] text-theme-secondary font-bold uppercase tracking-widest">Click to upload new photo</p>
             </div>
           </div>
 
@@ -4327,6 +4316,33 @@ ${conversation}`;
             </div>
           </div>
 
+          <div className="space-y-4">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-theme-secondary">Preferences</h3>
+            <div className="grid grid-cols-1 gap-2">
+              <div className="p-4 bg-theme-input border border-theme rounded-2xl flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Bell size={16} className="text-red-500" />
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-theme-primary">System Alerts</p>
+                    <p className="text-[8px] text-theme-secondary uppercase font-bold tracking-widest mt-0.5">
+                      {notificationPermission === 'granted' ? 'Enabled' : notificationPermission === 'denied' ? 'Blocked' : 'Not Configured'}
+                    </p>
+                  </div>
+                </div>
+                {notificationPermission !== 'granted' ? (
+                  <button 
+                    onClick={requestNotificationPermission}
+                    className="px-3 py-1.5 bg-red-600 text-white text-[8px] font-black uppercase tracking-widest rounded-lg hover:bg-red-700 transition-all"
+                  >
+                    Enable
+                  </button>
+                ) : (
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                )}
+              </div>
+            </div>
+          </div>
+
           <div>
             <div className="space-y-4">
               <h3 className="text-[10px] font-black uppercase tracking-widest text-theme-secondary">Security</h3>
@@ -4343,11 +4359,19 @@ ${conversation}`;
                       <span className="text-[10px] font-black uppercase tracking-widest">2FA is enabled</span>
                     </div>
                     <button 
-                      onClick={async () => {
-                        if (confirm('Disable 2FA? Your account will be less secure.')) {
-                          const res = await fetch(API_URL + '/api/auth/disable-2fa', { method: 'POST', headers: getAuthHeaders() });
-                          if (res.ok) setTwoFactorEnabled(false);
-                        }
+                      onClick={() => {
+                        setConfirmModal({
+                          isOpen: true,
+                          title: 'Disable 2FA',
+                          message: 'Disable 2FA? Your account will be less secure.',
+                          onConfirm: async () => {
+                            const res = await fetch(API_URL + '/api/auth/disable-2fa', { method: 'POST', headers: getAuthHeaders() });
+                            if (res.ok) {
+                              setTwoFactorEnabled(false);
+                              showNotification('2FA disabled successfully', 'success');
+                            }
+                          }
+                        });
                       }}
                       className="w-full text-[10px] text-theme-secondary hover:text-red-500 transition-colors uppercase tracking-widest font-bold"
                     >
@@ -4549,20 +4573,39 @@ ${conversation}`;
               className="w-full bg-theme-input border border-theme rounded-xl px-4 py-3 outline-none focus:border-red-500 transition-all text-sm font-bold h-24 resize-none text-theme-primary"
             />
           </div>
-          <button 
-            type="submit"
-            disabled={isSchedulingLoading}
-            className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-black uppercase tracking-[0.2em] py-4 rounded-xl transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2"
-          >
-            {isSchedulingLoading ? (
-              <>
-                <RefreshCw size={18} className="animate-spin" />
-                Scheduling...
-              </>
-            ) : (
-              'Schedule Session'
-            )}
-          </button>
+          <div className="flex flex-col gap-3">
+            <button 
+              type="submit"
+              disabled={isSchedulingLoading}
+              className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-black uppercase tracking-[0.2em] py-4 rounded-xl transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2"
+            >
+              {isSchedulingLoading ? (
+                <>
+                  <RefreshCw size={18} className="animate-spin" />
+                  Scheduling...
+                </>
+              ) : (
+                'Schedule Session'
+              )}
+            </button>
+            <button 
+              type="button"
+              onClick={() => {
+                showNotification('Test notification triggered!', 'success');
+                if (notificationPermission === 'granted') {
+                  new Notification('Practice Reminder Test', {
+                    body: 'This is a test notification from EnvisionPaths.',
+                    icon: '/icons/icon-192x192.png'
+                  });
+                } else {
+                  requestNotificationPermission();
+                }
+              }}
+              className="w-full bg-theme-surface border border-theme text-theme-secondary hover:text-theme-primary font-black uppercase tracking-widest py-3 rounded-xl transition-all text-[10px]"
+            >
+              Test Notification
+            </button>
+          </div>
         </form>
       </Modal>
 
@@ -4578,13 +4621,19 @@ ${conversation}`;
               className={`pointer-events-auto flex items-center gap-3 px-6 py-4 rounded-2xl border shadow-2xl backdrop-blur-md min-w-[300px] ${
                 notif.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
                 notif.type === 'error' ? 'bg-red-500/10 border-red-500/20 text-red-500' :
-                'bg-red-500/10 border-red-500/20 text-red-500'
+                'bg-theme-surface border-theme text-theme-primary'
               }`}
             >
               {notif.type === 'success' ? <CheckCircle2 size={18} /> :
                notif.type === 'error' ? <AlertCircle size={18} /> :
                <Info size={18} />}
               <p className="text-[10px] font-black uppercase tracking-widest">{notif.text}</p>
+              <button 
+                onClick={() => setNotifications(prev => prev.filter(n => n.id !== notif.id))}
+                className="ml-auto p-1 hover:bg-white/10 rounded-lg transition-colors"
+              >
+                <X size={14} />
+              </button>
             </motion.div>
           ))}
         </AnimatePresence>
