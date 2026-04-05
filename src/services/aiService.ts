@@ -12,8 +12,22 @@ import { GoogleGenAI, Modality } from "@google/genai";
 // We use a fallback to an empty string if the key is not set, 
 // as the platform's proxy will handle the actual authentication.
 const getAi = () => {
-  const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
-  return new GoogleGenAI({ apiKey });
+  // Check both standard and Vite-prefixed environment variables
+  // The platform might inject GEMINI_API_KEY or API_KEY
+  // We prioritize non-empty strings
+  const apiKey = 
+    (window as any).GEMINI_API_KEY ||
+    (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'undefined' ? process.env.GEMINI_API_KEY : '') || 
+    (process.env.API_KEY && process.env.API_KEY !== 'undefined' ? process.env.API_KEY : '') || 
+    import.meta.env.VITE_GEMINI_API_KEY ||
+    import.meta.env.VITE_API_KEY ||
+    '';
+  
+  if (!apiKey || apiKey === 'undefined') {
+    console.error("CRITICAL: Gemini API Key is missing or invalid. Please ensure GEMINI_API_KEY or API_KEY is set in the environment.");
+  }
+  
+  return new GoogleGenAI({ apiKey: apiKey as string });
 };
 
 export interface AIResponse {

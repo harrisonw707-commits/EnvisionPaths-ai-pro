@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Database from 'better-sqlite3';
@@ -42,32 +43,58 @@ function getStripe() {
 // Database Initialization
 let db: any;
 
-try {
-  const dbPath = process.env.NODE_ENV === 'production' ? '/tmp/envision.db' : 'envision.db';
-  console.log(`[DB] Connecting to ${dbPath}...`);
-  db = new Database(dbPath, { timeout: 5000 });
-  db.pragma('journal_mode = WAL');
-  db.pragma('synchronous = NORMAL');
-  console.log('[DB] Connected successfully');
-} catch (e: any) {
-  console.error('[DB] Connection error:', e);
-  // Fallback to in-memory if file fails
-  console.log('[DB] Falling back to in-memory database');
+const dbPath = process.env.NODE_ENV === 'production' ? '/tmp/envision.db' : 'envision.db';
+
+function initializeDb() {
   try {
-    db = new Database(':memory:');
-  } catch (memError) {
-    console.error('[DB] In-memory fallback failed, using mock object');
-    db = {
-      prepare: () => ({
-        get: () => ({}),
-        run: () => ({ lastInsertRowid: 1 }),
-        all: () => []
-      }),
-      pragma: () => {},
-      exec: () => {}
-    };
+    console.log(`[DB] Connecting to ${dbPath}...`);
+    db = new Database(dbPath, { timeout: 5000 });
+    db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = NORMAL');
+    console.log('[DB] Connected successfully');
+  } catch (e: any) {
+    console.error('[DB] Connection error:', e);
+    
+    // Check if the error is due to a malformed database
+    if (e.message && e.message.includes('malformed') && fs.existsSync(dbPath)) {
+      console.warn('[DB] Database is malformed. Attempting to delete and recreate...');
+      try {
+        fs.unlinkSync(dbPath);
+        // Also delete WAL and SHM files if they exist
+        if (fs.existsSync(`${dbPath}-wal`)) fs.unlinkSync(`${dbPath}-wal`);
+        if (fs.existsSync(`${dbPath}-shm`)) fs.unlinkSync(`${dbPath}-shm`);
+        
+        console.log('[DB] Corrupted database files deleted. Retrying connection...');
+        db = new Database(dbPath, { timeout: 5000 });
+        db.pragma('journal_mode = WAL');
+        db.pragma('synchronous = NORMAL');
+        console.log('[DB] Reconnected successfully after reset');
+        return;
+      } catch (unlinkError) {
+        console.error('[DB] Failed to delete corrupted database:', unlinkError);
+      }
+    }
+
+    // Fallback to in-memory if file fails
+    console.log('[DB] Falling back to in-memory database');
+    try {
+      db = new Database(':memory:');
+    } catch (memError) {
+      console.error('[DB] In-memory fallback failed, using mock object');
+      db = {
+        prepare: () => ({
+          get: () => ({}),
+          run: () => ({ lastInsertRowid: 1 }),
+          all: () => []
+        }),
+        pragma: () => {},
+        exec: () => {}
+      };
+    }
   }
 }
+
+initializeDb();
 
 // Create tables
 console.log('[DB] Initializing tables...');
@@ -1337,9 +1364,56 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   });
   } else {
     const distDir = path.join(process.cwd(), 'dist');
-    app.use(express.static(distDir));
+    app.use(express.static(distDir, {
+      setHeaders: (res, path) => {
+        if (path.endsWith('.js')) {
+          res.setHeader('Service-Worker-Allowed', '/');
+        }
+      }
+    }));
+    
+    // Explicitly serve manifest and sw if they exist
+    app.get('/manifest.json', (req, res) => {
+      const manifestPath = path.join(distDir, 'manifest.json');
+      if (fs.existsSync(manifestPath)) {
+        res.setHeader('Content-Type', 'application/manifest+json');
+        res.sendFile(manifestPath);
+      } else {
+        res.status(404).send('Manifest not found');
+      }
+    });
+
+    app.get('/sw.js', (req, res) => {
+      const swPath = path.join(distDir, 'sw.js');
+      if (fs.existsSync(swPath)) {
+        res.setHeader('Service-Worker-Allowed', '/');
+        res.sendFile(swPath);
+      } else {
+        res.status(404).send('Service worker not found');
+      }
+    });
+
+    app.get('/robots.txt', (req, res) => {
+      res.type('text/plain');
+      res.send('User-agent: *\nAllow: /');
+    });
+
     app.get('*', (req, res) => {
-      res.sendFile(path.join(distDir, 'index.html'));
+      // Don't serve index.html for missing files that look like static assets
+      if (req.url.includes('.') && !req.url.endsWith('.html')) {
+        return res.status(404).end();
+      }
+      
+      const indexPath = path.join(distDir, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        let html = fs.readFileSync(indexPath, 'utf-8');
+        const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || '';
+        const injection = `<script>window.GEMINI_API_KEY = ${JSON.stringify(apiKey)};</script>`;
+        html = html.replace('<!-- GEMINI_API_KEY_INJECTION -->', injection);
+        res.status(200).set({ 'Content-Type': 'text/html' }).send(html);
+      } else {
+        res.status(404).send('Not Found');
+      }
     });
   }
 

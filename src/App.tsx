@@ -1658,9 +1658,13 @@ Format the output clearly using Markdown headers and bullet points.`;
       setCurrentSimulationId(null);
       fetchHistory();
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error generating summary:", error);
-      setSummary("Error generating summary. Please try again.");
+      const isApiKeyError = error.message?.includes('API KEY NOT VALID') || error.message?.includes('400');
+      const errorMsg = isApiKeyError
+        ? "AI Service Configuration Error: The API key is missing or invalid. Please ensure the GEMINI_API_KEY environment variable is set or select a key in the AI Studio settings."
+        : "Error generating summary. Please try again.";
+      setSummary(errorMsg);
     } finally {
       setIsGeneratingSummary(false);
     }
@@ -1784,7 +1788,11 @@ Format the output clearly using Markdown headers and bullet points.`;
       }
     } catch (error: any) {
       console.error("Error starting interview:", error);
-      showNotification(error.message || "Failed to start interview. Please check your connection.", 'error');
+      const isApiKeyError = error.message?.includes('API KEY NOT VALID') || error.message?.includes('400');
+      const errorMsg = isApiKeyError
+        ? "AI Service Configuration Error: The API key is missing or invalid. Please ensure the GEMINI_API_KEY environment variable is set or select a key in the AI Studio settings."
+        : (error.message || "Failed to start interview. Please check your connection.");
+      showNotification(errorMsg, 'error');
     } finally {
       setIsTyping(false);
     }
@@ -1945,9 +1953,13 @@ Format the output clearly using Markdown headers and bullet points.`;
     } catch (error: any) {
       console.error("Error sending message:", error);
       const isQuota = error.message?.includes('429') || error.message?.toLowerCase().includes('quota');
+      const isApiKeyError = error.message?.includes('API KEY NOT VALID') || error.message?.includes('400');
+      
       const errorMsg = isQuota 
         ? "System Quota exceeded. The system is busy. Please wait 60 seconds and try again." 
-        : (error.message || "Failed to get response from the system. Please try again.");
+        : isApiKeyError
+          ? "AI Service Configuration Error: The API key is missing or invalid. Please ensure the GEMINI_API_KEY environment variable is set or select a key in the AI Studio settings."
+          : (error.message || "Failed to get response from the system. Please try again.");
       
       showNotification(errorMsg, 'error');
       setShowRetry(true); // Show the reset button
@@ -1985,7 +1997,7 @@ Format the output clearly using Markdown headers and bullet points.`;
 
       {/* Header */}
       {step !== 'auth' && (
-        <header className="bg-theme-main border-b border-theme px-4 py-2 md:px-6 md:py-3">
+        <header className="sticky top-0 z-50 bg-theme-main border-b border-theme px-4 py-2 md:px-6 md:py-3 backdrop-blur-md bg-theme-main/80">
           <div className="max-w-6xl mx-auto flex items-center justify-between">
             <div className="flex items-center">
               <span className="text-xl font-black tracking-tighter uppercase italic text-theme-primary">
@@ -1998,10 +2010,10 @@ Format the output clearly using Markdown headers and bullet points.`;
                 <motion.div 
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center gap-2 px-3 py-1 bg-red-600/10 border border-red-600/20 rounded-full mr-2"
+                  className="flex items-center gap-2 px-3 py-1 bg-red-600 text-white rounded-full mr-2 shadow-lg shadow-red-600/20"
                 >
-                  <RefreshCw size={10} className="text-red-500 animate-spin" />
-                  <span className="text-[9px] font-black uppercase tracking-widest text-red-500">Processing</span>
+                  <RefreshCw size={10} className="text-white animate-spin" />
+                  <span className="text-[9px] font-black uppercase tracking-widest">Processing</span>
                 </motion.div>
               )}
               <Tooltip content="Manage your subscription" position="bottom">
@@ -2072,9 +2084,12 @@ Format the output clearly using Markdown headers and bullet points.`;
                   <div className="inline-block px-4 py-1.5 bg-theme-surface border border-theme rounded-full">
                     <p className="text-[10px] font-black text-theme-secondary uppercase tracking-[0.3em]">Strategic Interview Coaching</p>
                   </div>
+                  <div className="flex justify-center lg:justify-start mb-6">
+                    <img src="/icons/icon.svg" alt="EnvisionPaths Logo" className="w-24 h-24 md:w-32 md:h-32" referrerPolicy="no-referrer" />
+                  </div>
                   <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tighter uppercase italic leading-[0.9] text-theme-primary">
-                    Navigate Your Path <br />
-                    Towards Success
+                    Navigate Your <span className="text-red-600">Path</span> <br />
+                    Towards <span className="text-red-600">Success</span>
                   </h1>
                   <p className="text-theme-secondary text-base md:text-lg max-w-md mx-auto lg:mx-0 leading-relaxed">
                     Strategic interview preparation for modern professionals. Practice with industry-specific scenarios and get real-time feedback to land your dream job.
@@ -2444,8 +2459,11 @@ Format the output clearly using Markdown headers and bullet points.`;
               className="max-w-6xl mx-auto mt-8 md:mt-12 px-4 md:px-0"
             >
               <div className="text-center mb-6 md:mb-12">
+                <div className="flex justify-center mb-6">
+                  <img src="/icons/icon.svg" alt="EnvisionPaths Logo" className="w-24 h-24 md:w-32 md:h-32" referrerPolicy="no-referrer" />
+                </div>
                 <h2 className="text-2xl md:text-5xl font-black tracking-tighter uppercase italic mb-3 md:mb-4">
-                  {sessionsUsed >= 2 && (!selectedPlan || selectedPlan === 'free') ? 'Ready for more practice?' : 'Level Up Your Career'}
+                  {sessionsUsed >= 2 && (!selectedPlan || selectedPlan === 'free') ? 'Ready for more practice?' : <span>Level Up Your <span className="text-red-600">Career</span></span>}
                 </h2>
                 <p className="text-theme-secondary max-w-2xl mx-auto text-sm md:text-base">
                   {sessionsUsed >= 2 && (!selectedPlan || selectedPlan === 'free')
@@ -2454,7 +2472,7 @@ Format the output clearly using Markdown headers and bullet points.`;
                 </p>
                 <div className="mt-4 inline-block px-4 py-1 bg-theme-surface-hover border border-theme rounded-full">
                   <p className="text-[10px] font-bold text-theme-secondary uppercase tracking-[0.2em]">
-                    {sessionsUsed >= 2 && (!selectedPlan || selectedPlan === 'free') ? 'Free Limit Reached' : 'Build discipline. Navigate your path towards success.'}
+                    {sessionsUsed >= 2 && (!selectedPlan || selectedPlan === 'free') ? 'Free Limit Reached' : <span>Build discipline. Navigate your path towards <span className="text-red-600">success</span>.</span>}
                   </p>
                 </div>
 
@@ -2698,7 +2716,10 @@ Format the output clearly using Markdown headers and bullet points.`;
               className="max-w-5xl mx-auto mt-8 md:mt-12 px-4 md:px-0"
             >
               <div className="text-center mb-8 md:mb-12">
-                <h2 className="text-3xl md:text-5xl font-black tracking-tighter uppercase italic mb-4 text-theme-primary">Prepare for Success</h2>
+                <div className="flex justify-center mb-6">
+                  <img src="/icons/icon.svg" alt="EnvisionPaths Logo" className="w-24 h-24 md:w-32 md:h-32" referrerPolicy="no-referrer" />
+                </div>
+                <h2 className="text-3xl md:text-5xl font-black tracking-tighter uppercase italic mb-4 text-theme-primary">Prepare for <span className="text-red-600">Success</span></h2>
                 <p className="text-theme-secondary max-w-2xl mx-auto">The interview is your opportunity to shine. Select your industry and target role to begin your practice session.</p>
                 {(!selectedPlan || selectedPlan === 'free') && (
                   <div className="mt-6 inline-block bg-theme-surface border border-theme px-4 py-2 rounded-full">
