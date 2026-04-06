@@ -1343,6 +1343,38 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   });
 
   
+  // Explicitly serve manifest and sw if they exist
+  app.get('/manifest.json', (req, res) => {
+    const manifestPath = path.join(process.cwd(), 'public', 'manifest.json');
+    if (fs.existsSync(manifestPath)) {
+      res.setHeader('Content-Type', 'application/manifest+json');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.sendFile(manifestPath);
+    } else {
+      res.status(404).send('Manifest not found');
+    }
+  });
+
+  // Explicitly serve icons from public folder
+  app.get('/icons/:icon', (req, res) => {
+    const iconPath = path.join(process.cwd(), 'public', 'icons', req.params.icon);
+    if (fs.existsSync(iconPath)) {
+      const ext = path.extname(req.params.icon).toLowerCase();
+      const mimeTypes: Record<string, string> = {
+        '.png': 'image/png',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg'
+      };
+      res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.sendFile(iconPath);
+    } else {
+      res.status(404).send('Icon not found');
+    }
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -1365,18 +1397,6 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   } else {
     const distDir = path.join(process.cwd(), 'dist');
     
-    // Explicitly serve manifest and sw if they exist BEFORE express.static
-    app.get('/manifest.json', (req, res) => {
-      const manifestPath = path.join(distDir, 'manifest.json');
-      if (fs.existsSync(manifestPath)) {
-        res.setHeader('Content-Type', 'application/manifest+json');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.sendFile(manifestPath);
-      } else {
-        res.status(404).send('Manifest not found');
-      }
-    });
-
     app.get('/sw.js', (req, res) => {
       const swPath = path.join(distDir, 'sw.js');
       if (fs.existsSync(swPath)) {
@@ -1424,6 +1444,8 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
         const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || '';
         const injection = `<script>window.GEMINI_API_KEY = ${JSON.stringify(apiKey)};</script>`;
         html = html.replace('<!-- GEMINI_API_KEY_INJECTION -->', injection);
+        // Force local manifest link
+        html = html.replace(/<link rel="manifest" href="[^"]+"[^>]*>/g, '<link rel="manifest" href="/manifest.json?v=3">');
         res.status(200).set({ 'Content-Type': 'text/html' }).send(html);
       } else {
         res.status(404).send('Not Found');
