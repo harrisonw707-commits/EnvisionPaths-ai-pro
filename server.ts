@@ -1364,19 +1364,13 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   });
   } else {
     const distDir = path.join(process.cwd(), 'dist');
-    app.use(express.static(distDir, {
-      setHeaders: (res, path) => {
-        if (path.endsWith('.js')) {
-          res.setHeader('Service-Worker-Allowed', '/');
-        }
-      }
-    }));
     
-    // Explicitly serve manifest and sw if they exist
+    // Explicitly serve manifest and sw if they exist BEFORE express.static
     app.get('/manifest.json', (req, res) => {
       const manifestPath = path.join(distDir, 'manifest.json');
       if (fs.existsSync(manifestPath)) {
         res.setHeader('Content-Type', 'application/manifest+json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
         res.sendFile(manifestPath);
       } else {
         res.status(404).send('Manifest not found');
@@ -1387,6 +1381,18 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
       const swPath = path.join(distDir, 'sw.js');
       if (fs.existsSync(swPath)) {
         res.setHeader('Service-Worker-Allowed', '/');
+        res.setHeader('Content-Type', 'application/javascript');
+        res.sendFile(swPath);
+      } else {
+        res.status(404).send('Service worker not found');
+      }
+    });
+
+    app.get('/service-worker.js', (req, res) => {
+      const swPath = path.join(distDir, 'service-worker.js');
+      if (fs.existsSync(swPath)) {
+        res.setHeader('Service-Worker-Allowed', '/');
+        res.setHeader('Content-Type', 'application/javascript');
         res.sendFile(swPath);
       } else {
         res.status(404).send('Service worker not found');
@@ -1397,6 +1403,14 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
       res.type('text/plain');
       res.send('User-agent: *\nAllow: /');
     });
+
+    app.use(express.static(distDir, {
+      setHeaders: (res, path) => {
+        if (path.endsWith('.js')) {
+          res.setHeader('Service-Worker-Allowed', '/');
+        }
+      }
+    }));
 
     app.get('*', (req, res) => {
       // Don't serve index.html for missing files that look like static assets
