@@ -1344,22 +1344,38 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   
   // Explicitly serve manifest and sw if they exist
-  app.get('/manifest.json', (req, res) => {
-    const manifestPath = path.join(process.cwd(), 'public', 'manifest.json');
-    if (fs.existsSync(manifestPath)) {
+  app.get(['/manifest.json', '/manifest-v2.json', '/manifest-v3.json'], (req, res) => {
+    const paths = [
+      path.join(process.cwd(), 'dist', 'manifest.json'),
+      path.join(process.cwd(), 'public', 'manifest.json')
+    ];
+    
+    let manifestPath = paths.find(p => fs.existsSync(p));
+    
+    if (manifestPath) {
       res.setHeader('Content-Type', 'application/manifest+json');
       res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       res.sendFile(manifestPath);
     } else {
       res.status(404).send('Manifest not found');
     }
   });
 
-  // Explicitly serve icons from public folder
+  // Explicitly serve icons from public or dist folder
   app.get('/icons/:icon', (req, res) => {
-    const iconPath = path.join(process.cwd(), 'public', 'icons', req.params.icon);
-    if (fs.existsSync(iconPath)) {
-      const ext = path.extname(req.params.icon).toLowerCase();
+    const iconName = req.params.icon.split('?')[0]; // Strip query params if any
+    const paths = [
+      path.join(process.cwd(), 'dist', 'icons', iconName),
+      path.join(process.cwd(), 'public', 'icons', iconName)
+    ];
+    
+    let iconPath = paths.find(p => fs.existsSync(p));
+
+    if (iconPath) {
+      const ext = path.extname(iconName).toLowerCase();
       const mimeTypes: Record<string, string> = {
         '.png': 'image/png',
         '.svg': 'image/svg+xml',
@@ -1369,6 +1385,8 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
       };
       res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
       res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
       res.sendFile(iconPath);
     } else {
       res.status(404).send('Icon not found');
@@ -1445,7 +1463,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
         const injection = `<script>window.GEMINI_API_KEY = ${JSON.stringify(apiKey)};</script>`;
         html = html.replace('<!-- GEMINI_API_KEY_INJECTION -->', injection);
         // Force local manifest link
-        html = html.replace(/<link rel="manifest" href="[^"]+"[^>]*>/g, '<link rel="manifest" href="/manifest.json?v=3">');
+        html = html.replace(/<link rel="manifest" href="[^"]+"[^>]*>/g, '<link rel="manifest" href="/manifest.json">');
         res.status(200).set({ 'Content-Type': 'text/html' }).send(html);
       } else {
         res.status(404).send('Not Found');

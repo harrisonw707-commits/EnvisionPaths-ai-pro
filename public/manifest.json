@@ -5,46 +5,25 @@
   "categories": ["education", "productivity", "business", "social"],
   "icons": [
     {
-      "src": "/icons/icon-192.png?v=3",
+      "src": "icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-512.png?v=3",
+      "src": "icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-512-maskable.png?v=3",
+      "src": "icons/icon-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
-    },
-    {
-      "src": "/icons/icon.svg?v=3",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any"
     }
   ],
-  "screenshots": [
-    {
-      "src": "https://picsum.photos/seed/envision1/1280/720",
-      "sizes": "1280x720",
-      "type": "image/jpeg",
-      "form_factor": "wide",
-      "label": "Interview Dashboard"
-    },
-    {
-      "src": "https://picsum.photos/seed/envision2/720/1280",
-      "sizes": "720x1280",
-      "type": "image/jpeg",
-      "form_factor": "narrow",
-      "label": "Mobile Interview Session"
-    }
-  ],
+  "screenshots": [],
   "start_url": "/",
   "id": "/",
   "scope": "/",
