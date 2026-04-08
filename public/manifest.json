@@ -23,7 +23,22 @@
       "purpose": "maskable"
     }
   ],
-  "screenshots": [],
+  "screenshots": [
+    {
+      "src": "https://picsum.photos/seed/envision/1280/720",
+      "sizes": "1280x720",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "EnvisionPaths Dashboard"
+    },
+    {
+      "src": "https://picsum.photos/seed/envision-mobile/720/1280",
+      "sizes": "720x1280",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "EnvisionPaths Mobile"
+    }
+  ],
   "start_url": "/",
   "id": "/",
   "scope": "/",

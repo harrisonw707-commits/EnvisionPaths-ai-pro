@@ -94,7 +94,7 @@ export async function generateSpeech(text: string, voiceName: string = 'Kore'): 
     const ai = getAi();
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `Say cheerfully: ${text}` }] }],
+      contents: [{ parts: [{ text: `Speak this with natural human-like intonation, pausing for emphasis where appropriate, as a professional career coach: ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
@@ -109,6 +109,35 @@ export async function generateSpeech(text: string, voiceName: string = 'Kore'): 
     return base64Audio || null;
   } catch (error) {
     console.error("TTS Generation Error:", error);
+    return null;
+  }
+}
+
+export async function transcribeAudio(base64Audio: string, mimeType: string): Promise<string | null> {
+  try {
+    const ai = getAi();
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [
+        {
+          parts: [
+            {
+              inlineData: {
+                mimeType: mimeType,
+                data: base64Audio,
+              },
+            },
+            {
+              text: "Transcribe the audio exactly as spoken. If there is no speech, return an empty string. Only return the transcription, nothing else.",
+            },
+          ],
+        },
+      ],
+    });
+
+    return response.text?.trim() || null;
+  } catch (error) {
+    console.error("Transcription Error:", error);
     return null;
   }
 }

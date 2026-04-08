@@ -1366,7 +1366,12 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   // Explicitly serve icons from public or dist folder
   app.get('/icons/:icon', (req, res) => {
-    const iconName = req.params.icon.split('?')[0]; // Strip query params if any
+    let iconName = req.params.icon.split('?')[0]; // Strip query params if any
+    
+    // Handle legacy or mismatched names
+    if (iconName === 'icon-192x192.png') iconName = 'icon-192.png';
+    if (iconName === 'icon-512x512.png') iconName = 'icon-512.png';
+
     const paths = [
       path.join(process.cwd(), 'dist', 'icons', iconName),
       path.join(process.cwd(), 'public', 'icons', iconName)
@@ -1383,11 +1388,18 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
         '.jpg': 'image/jpeg',
         '.jpeg': 'image/jpeg'
       };
-      res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.sendFile(iconPath);
+      
+      const contentType = mimeTypes[ext] || 'application/octet-stream';
+      
+      // Use options to ensure headers are set correctly by sendFile
+      res.sendFile(iconPath, {
+        headers: {
+          'Content-Type': contentType,
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'X-Content-Type-Options': 'nosniff'
+        }
+      });
     } else {
       res.status(404).send('Icon not found');
     }
@@ -1472,6 +1484,44 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   }
 
   // Global Error Handler
+  app.post('/api/upload-icon', (req, res) => {
+    const user = getSessionUser(req);
+    if (!user || !user.is_admin) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const { name, data } = req.body;
+    if (!name || !data) {
+      return res.status(400).json({ error: 'Missing name or data' });
+    }
+
+    try {
+      // Data is base64: "data:image/png;base64,..."
+      const base64Data = data.replace(/^data:image\/png;base64,/, "");
+      const buffer = Buffer.from(base64Data, 'base64');
+      
+      const publicPath = path.join(process.cwd(), 'public', 'icons', name);
+      const distPath = path.join(process.cwd(), 'dist', 'icons', name);
+      
+      fs.writeFileSync(publicPath, buffer);
+      console.log(`[ICONS] Saved ${name} to public/icons`);
+      
+      // Also save to dist if it exists (for immediate production availability)
+      if (fs.existsSync(path.join(process.cwd(), 'dist'))) {
+        if (!fs.existsSync(path.join(process.cwd(), 'dist', 'icons'))) {
+          fs.mkdirSync(path.join(process.cwd(), 'dist', 'icons'), { recursive: true });
+        }
+        fs.writeFileSync(distPath, buffer);
+        console.log(`[ICONS] Saved ${name} to dist/icons`);
+      }
+      
+      res.json({ success: true, path: `/icons/${name}` });
+    } catch (e: any) {
+      console.error(`[ICONS] Error saving ${name}:`, e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('[GLOBAL ERROR]', err);
     if (res.headersSent) return next(err);
