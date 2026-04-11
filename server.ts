@@ -1252,8 +1252,15 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
     const user = getSessionUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
     
-    const { completed } = req.body;
-    db.prepare("UPDATE reminders SET completed = ? WHERE id = ? AND user_id = ?").run(completed ? 1 : 0, req.params.id, user.id);
+    const { title, description, scheduled_at, completed } = req.body;
+    
+    if (completed !== undefined) {
+      db.prepare("UPDATE reminders SET completed = ? WHERE id = ? AND user_id = ?").run(completed ? 1 : 0, req.params.id, user.id);
+    } else {
+      if (!title || !scheduled_at) return res.status(400).json({ error: 'Missing required fields' });
+      db.prepare("UPDATE reminders SET title = ?, description = ?, scheduled_at = ? WHERE id = ? AND user_id = ?").run(title, description, scheduled_at, req.params.id, user.id);
+    }
+    
     res.json({ success: true });
   });
 
@@ -1364,6 +1371,27 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
     }
   });
 
+  app.get(['/sw.js', '/service-worker.js'], (req, res) => {
+    const paths = [
+      path.join(process.cwd(), 'dist', 'sw.js'),
+      path.join(process.cwd(), 'public', 'sw.js'),
+      path.join(process.cwd(), 'dist', 'service-worker.js'),
+      path.join(process.cwd(), 'public', 'service-worker.js')
+    ];
+    
+    let swPath = paths.find(p => fs.existsSync(p));
+    
+    if (swPath) {
+      res.setHeader('Service-Worker-Allowed', '/');
+      res.setHeader('Content-Type', 'application/javascript');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.sendFile(swPath);
+    } else {
+      res.status(404).send('Service worker not found');
+    }
+  });
+
   // Explicitly serve icons from public or dist folder
   app.get('/icons/:icon', (req, res) => {
     let iconName = req.params.icon.split('?')[0]; // Strip query params if any
@@ -1427,28 +1455,6 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   } else {
     const distDir = path.join(process.cwd(), 'dist');
     
-    app.get('/sw.js', (req, res) => {
-      const swPath = path.join(distDir, 'sw.js');
-      if (fs.existsSync(swPath)) {
-        res.setHeader('Service-Worker-Allowed', '/');
-        res.setHeader('Content-Type', 'application/javascript');
-        res.sendFile(swPath);
-      } else {
-        res.status(404).send('Service worker not found');
-      }
-    });
-
-    app.get('/service-worker.js', (req, res) => {
-      const swPath = path.join(distDir, 'service-worker.js');
-      if (fs.existsSync(swPath)) {
-        res.setHeader('Service-Worker-Allowed', '/');
-        res.setHeader('Content-Type', 'application/javascript');
-        res.sendFile(swPath);
-      } else {
-        res.status(404).send('Service worker not found');
-      }
-    });
-
     app.get('/robots.txt', (req, res) => {
       res.type('text/plain');
       res.send('User-agent: *\nAllow: /');
@@ -1464,7 +1470,8 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
     app.get('*', (req, res) => {
       // Don't serve index.html for missing files that look like static assets
-      if (req.url.includes('.') && !req.url.endsWith('.html')) {
+      // Use req.path instead of req.url to avoid issues with query parameters
+      if (req.path.includes('.') && !req.path.endsWith('.html')) {
         return res.status(404).end();
       }
       

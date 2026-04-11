@@ -5,19 +5,19 @@
   "categories": ["education", "productivity", "business", "social"],
   "icons": [
     {
-      "src": "icons/icon-192.png",
+      "src": "/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icons/icon-512.png",
+      "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icons/icon-512-maskable.png",
+      "src": "/icons/icon-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -39,11 +39,13 @@
       "label": "EnvisionPaths Mobile"
     }
   ],
-  "start_url": "/",
-  "id": "/",
+  "start_url": "/?utm_source=pwa",
+  "id": "envisionpaths-pwa",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "window-controls-overlay"],
   "orientation": "portrait",
+  "lang": "en",
   "theme_color": "#ef4444",
   "background_color": "#000000",
   "prefer_related_applications": false,
