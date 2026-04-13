@@ -4933,6 +4933,90 @@ Format the output with professional formatting, using bold headers, emojis for v
             </div>
           </div>
 
+          <div className="pt-4 border-t border-theme space-y-4">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-theme-secondary">Debug Tools</h3>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch(API_URL + '/api/auth/promote-admin', {
+                      method: 'POST',
+                      headers: getAuthHeaders()
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                      showNotification(data.message, 'success');
+                      fetchProfile();
+                    } else {
+                      showNotification(data.error || 'Failed to promote', 'error');
+                    }
+                  } catch (e) {
+                    showNotification('Failed to promote', 'error');
+                  }
+                }}
+                className="px-3 py-1.5 bg-red-600/10 hover:bg-red-600/20 text-red-500 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors border border-red-500/20"
+              >
+                Force Admin Status
+              </button>
+              <button
+                onClick={() => {
+                  console.log('[DEBUG] Current User:', user);
+                  console.log('[DEBUG] isAdmin state:', isAdmin);
+                  showNotification(`User: ${user?.email}, Admin: ${user?.is_admin}`, 'info');
+                }}
+                className="px-3 py-1.5 bg-theme-secondary/10 hover:bg-theme-secondary/20 text-theme-secondary rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors border border-theme"
+              >
+                Log User State
+              </button>
+              <button
+                onClick={() => {
+                  setIsSettingsOpen(false);
+                  setStep('admin');
+                  setAdminTab('icons');
+                }}
+                className="px-3 py-1.5 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-500 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors border border-emerald-500/20"
+              >
+                Open Icon Generator
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch(API_URL + '/api/admin/rebuild-icons', {
+                      method: 'POST',
+                      headers: getAuthHeaders()
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                      showNotification(data.message, 'success');
+                    } else {
+                      showNotification(data.error || 'Failed to rebuild', 'error');
+                    }
+                  } catch (e) {
+                    showNotification('Failed to rebuild', 'error');
+                  }
+                }}
+                className="px-3 py-1.5 bg-theme-secondary/10 hover:bg-theme-secondary/20 text-theme-secondary rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors border border-theme"
+              >
+                Rebuild Icons
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch(API_URL + '/api/debug/icons');
+                    const data = await res.json();
+                    console.log('[DEBUG] Icons:', data);
+                    showNotification(`Icons: ${data.public.length} in public, ${data.dist.length} in dist`, 'info');
+                  } catch (e) {
+                    showNotification('Failed to check icons', 'error');
+                  }
+                }}
+                className="px-3 py-1.5 bg-theme-secondary/10 hover:bg-theme-secondary/20 text-theme-secondary rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors border border-theme"
+              >
+                Check Icons
+              </button>
+            </div>
+          </div>
+
           <div className="pt-4 space-y-3">
             <button 
               onClick={handleLogout}

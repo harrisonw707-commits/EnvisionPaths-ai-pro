@@ -3,6 +3,11 @@
   "name": "EnvisionPaths",
   "description": "Professional AI-powered interview coaching. Practice real-time sessions with personalized feedback to land your dream job.",
   "categories": ["education", "productivity", "business", "social"],
+  "dir": "ltr",
+  "lang": "en",
+  "prefer_related_applications": false,
+  "related_applications": [],
+  "iarc_rating_id": "e84c78b4-39bb-4514-90a4-747d6961d685",
   "icons": [
     {
       "src": "/icons/icon-192.png",
@@ -25,29 +30,33 @@
   ],
   "screenshots": [
     {
-      "src": "https://picsum.photos/seed/envision/1280/720",
-      "sizes": "1280x720",
-      "type": "image/jpeg",
-      "form_factor": "wide",
-      "label": "EnvisionPaths Dashboard"
-    },
-    {
-      "src": "https://picsum.photos/seed/envision-mobile/720/1280",
-      "sizes": "720x1280",
+      "src": "https://picsum.photos/seed/envision1/1080/1920",
+      "sizes": "1080x1920",
       "type": "image/jpeg",
       "form_factor": "narrow",
-      "label": "EnvisionPaths Mobile"
+      "label": "AI Interview Practice"
+    },
+    {
+      "src": "https://picsum.photos/seed/envision2/1080/1920",
+      "sizes": "1080x1920",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Real-time Feedback"
+    },
+    {
+      "src": "https://picsum.photos/seed/envision3/1920/1080",
+      "sizes": "1920x1080",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "Dashboard Overview"
     }
   ],
-  "start_url": "/?utm_source=pwa",
-  "id": "envisionpaths-pwa",
-  "scope": "/",
+ "start_url": "https://envisionpaths.web.app",
+"id": "https://envisionpaths.web.app",
+"scope": "https://envisionpaths.web.app",
   "display": "standalone",
   "display_override": ["standalone", "window-controls-overlay"],
   "orientation": "portrait",
-  "lang": "en",
   "theme_color": "#ef4444",
-  "background_color": "#000000",
-  "prefer_related_applications": false,
-  "related_applications": []
+  "background_color": "#000000"
 }

@@ -44,10 +44,18 @@ export default function IconGenerator({ apiUrl, authHeaders, onNotification }: I
 
         const img = new Image();
         await new Promise((resolve, reject) => {
-          img.onload = resolve;
+          img.onload = () => {
+            // Small delay to ensure SVG rendering is complete
+            setTimeout(resolve, 100);
+          };
           img.onerror = reject;
           img.src = url;
         });
+
+        // Ensure fonts are loaded before drawing
+        if ('fonts' in document) {
+          await (document as any).fonts.ready;
+        }
 
         ctx.drawImage(img, 0, 0, size, size);
         const pngData = canvas.toDataURL('image/png');
