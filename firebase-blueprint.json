@@ -2,45 +2,49 @@
   "entities": {
     "User": {
       "title": "User",
-      "description": "A user of the EnvisionPaths platform.",
+      "description": "User profile and settings",
       "type": "object",
       "properties": {
         "email": { "type": "string", "format": "email" },
+        "plan_type": { "type": "string", "enum": ["free", "pro", "elite"] },
+        "plan_start_date": { "type": "string", "format": "date-time" },
+        "stripe_customer_id": { "type": "string" },
+        "profile_picture": { "type": "string" },
         "is_admin": { "type": "boolean" },
+        "two_factor_enabled": { "type": "boolean" },
         "created_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["email", "created_at"]
+      "required": ["email", "plan_type", "created_at"]
     },
     "Simulation": {
       "title": "Simulation",
-      "description": "An interview simulation session.",
+      "description": "Interview simulation session",
       "type": "object",
       "properties": {
         "user_id": { "type": "string" },
         "job_title": { "type": "string" },
         "industry": { "type": "string" },
-        "score": { "type": "integer" },
+        "score": { "type": "number" },
         "feedback": { "type": "string" },
         "status": { "type": "string", "enum": ["started", "completed"] },
         "created_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["user_id", "job_title", "industry", "status", "created_at"]
+      "required": ["user_id", "job_title", "status", "created_at"]
     },
     "SimulationMessage": {
       "title": "SimulationMessage",
-      "description": "A message within an interview simulation.",
+      "description": "Message within a simulation",
       "type": "object",
       "properties": {
-        "simulation_id": { "type": "string" },
-        "role": { "type": "string", "enum": ["user", "model"] },
+        "role": { "type": "string", "enum": ["user", "assistant", "system"] },
         "content": { "type": "string" },
         "created_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["simulation_id", "role", "content", "created_at"]
+      "required": ["role", "content", "created_at"]
     },
     "Reminder": {
       "title": "Reminder",
-      "description": "A practice session reminder.",
+      "description": "Practice reminder",
       "type": "object",
       "properties": {
         "user_id": { "type": "string" },
@@ -50,25 +54,59 @@
         "completed": { "type": "boolean" },
         "created_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["user_id", "title", "scheduled_at", "completed", "created_at"]
+      "required": ["user_id", "title", "scheduled_at", "created_at"]
+    },
+    "GlitchReport": {
+      "title": "GlitchReport",
+      "description": "Report of a glitch in a simulation",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "simulation_id": { "type": "string" },
+        "reason": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "simulation_id", "reason", "created_at"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Log of user activity",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "activity": { "type": "string" },
+        "country": { "type": "string" },
+        "ip_address": { "type": "string" },
+        "user_agent": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "activity", "created_at"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
-      "description": "User profiles."
+      "description": "User profiles"
     },
     "/simulations/{simulationId}": {
       "schema": "Simulation",
-      "description": "Interview simulation sessions."
+      "description": "Simulations"
     },
     "/simulations/{simulationId}/messages/{messageId}": {
       "schema": "SimulationMessage",
-      "description": "Messages within a simulation."
+      "description": "Messages in a simulation"
     },
     "/reminders/{reminderId}": {
       "schema": "Reminder",
-      "description": "User reminders."
+      "description": "User reminders"
+    },
+    "/glitch_reports/{reportId}": {
+      "schema": "GlitchReport",
+      "description": "Glitch reports"
+    },
+    "/activity_logs/{logId}": {
+      "schema": "ActivityLog",
+      "description": "Activity logs"
     }
   }
 }

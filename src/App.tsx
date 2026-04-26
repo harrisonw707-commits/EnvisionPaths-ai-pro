@@ -98,6 +98,44 @@ import Modal from './components/Modal';
 import { API_URL } from './config';
 import IconGenerator from './components/IconGenerator';
 
+// Firebase Imports
+import { auth, db, storage } from './firebase';
+import { 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut,
+  signInWithPopup,
+  GoogleAuthProvider,
+  sendPasswordResetEmail,
+  updateEmail,
+  updatePassword,
+  deleteUser,
+  reauthenticateWithCredential,
+  EmailAuthProvider
+} from 'firebase/auth';
+import { 
+  doc, 
+  getDoc, 
+  getDocs,
+  setDoc, 
+  updateDoc, 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot,
+  addDoc,
+  deleteDoc,
+  serverTimestamp,
+  increment,
+  limit,
+  writeBatch
+} from 'firebase/firestore';
+import { handleFirestoreError, OperationType } from './lib/firebaseUtils';
+import { getDocFromServer } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+
 interface Message {
   role: 'user' | 'model';
   text: string;
@@ -111,6 +149,8 @@ declare global {
     gtag: (...args: any[]) => void;
   }
 }
+
+const APP_VERSION = "2026.04.26.01";
 
 const VoiceVisualizer = () => (
   <div className="flex items-end gap-0.5 h-3">
@@ -143,7 +183,19 @@ const VOICES = [
 ];
 
 export default function App() {
-  const [step, setStep] = useState<AppStep>('auth');
+  const [step, setStep] = useState<AppStep>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('app-step');
+      if (saved && ['auth', 'pricing', 'setup', 'interview', 'summary', 'admin', 'reminders'].includes(saved)) {
+        return saved as AppStep;
+      }
+    }
+    return 'auth';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('app-step', step);
+  }, [step]);
   const [selectedVoice, setSelectedVoice] = useState<string>('Kore');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
   const [selectedPlan, setSelectedPlan] = useState<'free' | 'beginner' | 'pro' | 'elite' | null>(null);
@@ -165,6 +217,7 @@ export default function App() {
   const [summary, setSummary] = useState<string>('');
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
+  const [glitchReports, setGlitchReports] = useState<any[]>([]);
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [simulations, setSimulations] = useState<any[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
@@ -175,33 +228,36 @@ export default function App() {
   const [isImporting, setIsImporting] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [jobTitle, setJobTitle] = useState('');
-  const [industry, setIndustry] = useState('');
+  const [jobTitle, setJobTitle] = useState(() => localStorage.getItem('app-job-title') || '');
+  const [industry, setIndustry] = useState(() => localStorage.getItem('app-industry') || '');
+
+  useEffect(() => {
+    localStorage.setItem('app-job-title', jobTitle);
+  }, [jobTitle]);
+
+  useEffect(() => {
+    localStorage.setItem('app-industry', industry);
+  }, [industry]);
   const [lastAlertCount, setLastAlertCount] = useState<number>(0);
   const [isAnnual, setIsAnnual] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
-  const [currentSimulationId, setCurrentSimulationId] = useState<number | null>(null);
+  const [currentSimulationId, setCurrentSimulationId] = useState<string | null>(() => localStorage.getItem('app-simulation-id'));
+
+  useEffect(() => {
+    if (currentSimulationId) {
+      localStorage.setItem('app-simulation-id', currentSimulationId);
+    } else {
+      localStorage.removeItem('app-simulation-id');
+    }
+  }, [currentSimulationId]);
   const [isLoading, setIsLoading] = useState(false);
   const [showSkipLoading, setShowSkipLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [profilePictureFile, setProfilePictureFile] = useState<File | null>(null);
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
-  const [requires2FA, setRequires2FA] = useState(false);
-  const [tempUserId, setTempUserId] = useState<number | null>(null);
-  const [twoFactorCode, setTwoFactorCode] = useState('');
-  const [isSettingUp2FA, setIsSettingUp2FA] = useState(false);
-  const [qrCodeUrl, setQrCodeUrl] = useState('');
-  const [setupCode, setSetupCode] = useState('');
-  const [twoFactorMethod, setTwoFactorMethod] = useState<'totp' | 'email'>('totp');
-  const [emailCodeSent, setEmailCodeSent] = useState(false);
-  const [isSendingCode, setIsSendingCode] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
-  const [resetCode, setResetCode] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [resetUserId, setResetUserId] = useState<number | null>(null);
   const [showForgotPasswordForm, setShowForgotPasswordForm] = useState(false);
-  const [resetStep, setResetStep] = useState<'email' | 'code' | 'password'>('email');
+  const [resetStep, setResetStep] = useState<'email' | 'sent'>('email');
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [isEnhancingResume, setIsEnhancingResume] = useState(false);
   const [resumeAnalysis, setResumeAnalysis] = useState<string | null>(null);
@@ -213,8 +269,8 @@ export default function App() {
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [notifications, setNotifications] = useState<{ id: string; text: string; type: 'success' | 'error' | 'info' }[]>([]);
   const [showScrollTop, setShowScrollTop] = useState(false);
-  const notifiedReminders = useRef<Set<number>>(new Set());
-  const notified15Min = useRef<Set<number>>(new Set());
+  const notifiedReminders = useRef<Set<string>>(new Set());
+  const notified15Min = useRef<Set<string>>(new Set());
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
 
@@ -255,10 +311,22 @@ export default function App() {
   };
 
   // Interview tracking state
-  const [questionsAsked, setQuestionsAsked] = useState(0);
-  const [questionsAnswered, setQuestionsAnswered] = useState(0);
+  const [questionsAsked, setQuestionsAsked] = useState(() => Number(localStorage.getItem('app-questions-asked') || 1));
+  const [questionsAnswered, setQuestionsAnswered] = useState(() => Number(localStorage.getItem('app-questions-answered') || 0));
   const [interviewCompleted, setInterviewCompleted] = useState(false);
-  const [interviewLength, setInterviewLength] = useState(5);
+  const [interviewLength, setInterviewLength] = useState(() => Number(localStorage.getItem('app-interview-length') || 5));
+
+  useEffect(() => {
+    localStorage.setItem('app-questions-asked', questionsAsked.toString());
+  }, [questionsAsked]);
+
+  useEffect(() => {
+    localStorage.setItem('app-questions-answered', questionsAnswered.toString());
+  }, [questionsAnswered]);
+
+  useEffect(() => {
+    localStorage.setItem('app-interview-length', interviewLength.toString());
+  }, [interviewLength]);
 
   // Reminders state
   const [reminders, setReminders] = useState<any[]>([]);
@@ -272,7 +340,7 @@ export default function App() {
   const [reminderDate, setReminderDate] = useState('');
   const [reminderTime, setReminderTime] = useState('');
   const [reminderDesc, setReminderDesc] = useState('');
-  const [editingReminderId, setEditingReminderId] = useState<number | null>(null);
+  const [editingReminderId, setEditingReminderId] = useState<string | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
     typeof Notification !== 'undefined' ? Notification.permission : 'default'
   );
@@ -291,13 +359,105 @@ export default function App() {
 
   const [authError, setAuthError] = useState<string | null>(null);
   const [showRetry, setShowRetry] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check server health
-    fetch(API_URL + '/api/health')
-      .then(res => res.json())
-      .then(data => console.log('[SYSTEM] Backend health:', data.status))
-      .catch(err => console.warn('[SYSTEM] Backend connection issue:', err));
+    console.log(`[APP] EnvisionPaths v${APP_VERSION} initialized`);
+    // Connection test as per guidelines
+    const testConnection = async () => {
+      try {
+        await getDocFromServer(doc(db, '_connection_test_', 'ping'));
+      } catch (error: any) {
+        if (error.message && error.message.includes('offline')) {
+          setConnectionError("Firestore is offline. Please check your internet connection and Firebase configuration.");
+        } else if (error.code === 'permission-denied' || error.message?.includes('permission-denied')) {
+           // This is actually a good sign - it reached the server but rules blocked it
+           console.log('[FIREBASE] Connection successful, permission denied expected');
+        } else {
+          handleFirestoreError(error, OperationType.GET, '_connection_test_/ping');
+        }
+      }
+    };
+    testConnection();
+
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      try {
+        if (firebaseUser) {
+          console.log('[AUTH] User logged in:', firebaseUser.email);
+          // Fetch additional user data from Firestore
+          const uid = firebaseUser.uid;
+          let userDoc;
+          try {
+            userDoc = await getDoc(doc(db, 'users', uid));
+          } catch (error) {
+            handleFirestoreError(error, OperationType.GET, `users/${uid}`);
+            return;
+          }
+
+          if (userDoc?.exists()) {
+            const userData = userDoc.data();
+            const normalizedEmail = firebaseUser.email?.toLowerCase();
+            const emailMatch = normalizedEmail === 'harrisonw707@gmail.com';
+            const isTestAdmin = userData.is_test_account && userData.plan_type === 'pro';
+            const isUserAdmin = !!userData.is_admin || emailMatch || isTestAdmin;
+            
+            console.log(`[AUTH] Checking admin access for ${normalizedEmail}. Match: ${emailMatch}, TestAdmin: ${isTestAdmin}, Firestore: ${!!userData.is_admin}, Result: ${isUserAdmin}`);
+            
+            setUser({
+              ...userData,
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              is_admin: isUserAdmin
+            });
+            setIsAdmin(isUserAdmin);
+            setSelectedPlan(userData.plan_type || 'free');
+
+            // Proactively update admin status if missing for the specific admin email
+            if (emailMatch && !userData.is_admin) {
+              updateDoc(doc(db, 'users', uid), { is_admin: true }).catch(console.error);
+            }
+
+            // Fetch user data
+            fetchHistory(uid);
+            fetchReminders(uid);
+            if (isUserAdmin) {
+              fetchActivityLogs(true);
+            }
+
+            // Only steer to setup if they are currently on auth/pricing or if we just initialized
+            setStep(prev => (prev === 'auth' || prev === 'pricing' || !isAuthReady) ? 'setup' : prev);
+          } else {
+            // New user, but auth exists? Should have been created in handleAuth
+            console.warn('[AUTH] User doc not found for:', firebaseUser.uid);
+            setUser({
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              plan_type: 'free'
+            });
+            setStep(prev => (prev === 'auth' || !isAuthReady) ? 'pricing' : prev);
+          }
+        } else {
+          console.log('[AUTH] No user session');
+          setUser(null);
+          setIsAdmin(false);
+          // Only redirect to auth if not already there and initialized
+          setStep(prev => prev !== 'auth' ? 'auth' : prev);
+        }
+      } catch (error: any) {
+        console.error('[AUTH] Post-login Firestore error:', error);
+        // Don't kick them out if they are already in a session and it's a background refresh failing
+        setStep(prev => (prev === 'auth' || !isAuthReady) ? 'auth' : prev);
+        
+        if (!isAuthReady) {
+          setAuthError("Failed to synchronize account data with the server.");
+        }
+      } finally {
+        setIsAuthReady(true);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -487,12 +647,6 @@ Generated by EnvisionPaths Career Intelligence`;
     }
   }, [simulationMessages, selectedSimulation]);
 
-  useEffect(() => {
-    if (step === 'setup' || step === 'reminders') {
-      fetchReminders();
-    }
-  }, [step]);
-
   // Background check for upcoming reminders
   useEffect(() => {
     const checkReminders = () => {
@@ -565,50 +719,41 @@ Generated by EnvisionPaths Career Intelligence`;
     return () => clearInterval(interval);
   }, [reminders, notificationPermission]);
 
-  const fetchReminders = async () => {
-    try {
-      const res = await fetch(API_URL + '/api/reminders', { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setReminders(data.reminders);
-      }
-    } catch (e) {
-      console.error('Error fetching reminders:', e);
-    }
-  };
-
   const addReminder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSchedulingLoading) return;
+    if (isSchedulingLoading || !user) return;
     
     setIsSchedulingLoading(true);
     console.log('[REMINDER] Saving reminder:', { editingReminderId, reminderTitle, reminderDate, reminderTime });
     try {
-      const scheduled_at = `${reminderDate}T${reminderTime}:00`; 
-      const url = editingReminderId ? `${API_URL}/api/reminders/${editingReminderId}` : `${API_URL}/api/reminders`;
-      const method = editingReminderId ? 'PATCH' : 'POST';
+      const scheduledAtDate = new Date(`${reminderDate}T${reminderTime}:00`);
       
-      const res = await fetch(url, {
-        method,
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: reminderTitle, description: reminderDesc, scheduled_at })
-      });
-      
-      if (res.ok) {
-        console.log('[REMINDER] Reminder saved successfully');
-        setReminderTitle('');
-        setReminderDate('');
-        setReminderTime('');
-        setReminderDesc('');
-        setEditingReminderId(null);
-        setIsScheduling(false);
-        fetchReminders();
-        showNotification(editingReminderId ? 'Reminder updated!' : 'Practice session scheduled!', 'success');
+      if (editingReminderId) {
+        const reminderRef = doc(db, 'reminders', editingReminderId);
+        await updateDoc(reminderRef, {
+          title: reminderTitle,
+          description: reminderDesc,
+          scheduled_at: scheduledAtDate
+        });
       } else {
-        const err = await res.json();
-        console.error('[REMINDER] Failed to save reminder:', err);
-        showNotification('Failed to save session.', 'error');
+        await addDoc(collection(db, 'reminders'), {
+          user_id: user.uid,
+          title: reminderTitle,
+          description: reminderDesc,
+          scheduled_at: scheduledAtDate,
+          completed: false,
+          created_at: serverTimestamp()
+        });
       }
+      
+      console.log('[REMINDER] Reminder saved successfully');
+      setReminderTitle('');
+      setReminderDate('');
+      setReminderTime('');
+      setReminderDesc('');
+      setEditingReminderId(null);
+      setIsScheduling(false);
+      showNotification(editingReminderId ? 'Reminder updated!' : 'Practice session scheduled!', 'success');
     } catch (e) {
       console.error('Error saving reminder:', e);
       showNotification('An error occurred while saving.', 'error');
@@ -627,133 +772,26 @@ Generated by EnvisionPaths Career Intelligence`;
     setIsScheduling(true);
   };
 
-  const toggleReminder = async (id: number, completed: boolean) => {
+  const toggleReminder = async (id: string, completed: boolean) => {
     try {
-      const res = await fetch(`${API_URL}/api/reminders/${id}`, {
-        method: 'PATCH',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ completed: !completed })
-      });
-      if (res.ok) {
-        fetchReminders();
-      }
+      const reminderRef = doc(db, 'reminders', id);
+      await updateDoc(reminderRef, { completed: !completed });
+      showNotification(`Reminder marked as ${!completed ? 'completed' : 'pending'}`, 'success');
     } catch (e) {
-      console.error('Error toggling reminder:', e);
+      handleFirestoreError(e, OperationType.UPDATE, `reminders/${id}`);
     }
   };
 
-  const deleteReminder = async (id: number) => {
+  const deleteReminder = async (id: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/reminders/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
-      });
-      if (res.ok) {
-        fetchReminders();
-      }
+      const reminderRef = doc(db, 'reminders', id);
+      await deleteDoc(reminderRef);
+      showNotification('Reminder deleted', 'success');
     } catch (e) {
-      console.error('Error deleting reminder:', e);
+      handleFirestoreError(e, OperationType.DELETE, `reminders/${id}`);
     }
   };
 
-  useEffect(() => {
-    const checkSession = async () => {
-      console.log('[APP] Starting session check...');
-      console.log('[APP] Current localStorage session_id:', localStorage.getItem('session_id'));
-      console.log('[APP] Current URL:', window.location.href);
-      
-      // Show skip button after 1.5 seconds
-      const skipTimeoutId = setTimeout(() => {
-        console.log('[APP] Skip loading button triggered');
-        setShowSkipLoading(true);
-      }, 1500);
-
-      // Safety timeout: force loading to false after 3 seconds
-      const timeoutId = setTimeout(() => {
-        console.warn('[APP] Session check timed out, forcing loading to false');
-        setIsLoading(false);
-      }, 3000);
-
-      const urlParams = new URLSearchParams(window.location.search);
-      const sessionId = urlParams.get('session_id');
-      const planType = urlParams.get('plan_type');
-
-      if (sessionId) {
-        try {
-          const verifyRes = await fetch(API_URL + '/api/verify-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              session_id: sessionId
-            })
-          });
-          if (verifyRes.ok) {
-            const contentType = verifyRes.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-              const data = await verifyRes.json();
-              setSelectedPlan(data.plan_type);
-              trackEvent('plan_unlocked', { plan: data.plan_type });
-              // Clean up URL
-              window.history.replaceState({}, document.title, window.location.pathname);
-            }
-          }
-        } catch (e) {
-          console.error('Verification failed');
-        }
-      }
-
-      try {
-        console.log('[APP] Fetching user profile...');
-        const user = await fetchProfile();
-        console.log('[APP] Profile fetch result:', user ? 'User found' : 'No user');
-        if (user) {
-          // Only set step to setup if we're currently on auth
-          setStep(prev => prev === 'auth' ? 'setup' : prev);
-          fetchHistory();
-        } else {
-          console.log('[APP] No active session found');
-        }
-      } catch (e) {
-        console.error('[APP] Session check failed', e);
-      } finally {
-        console.log('[APP] Cleaning up session check...');
-        clearTimeout(timeoutId);
-        clearTimeout(skipTimeoutId);
-        setIsLoading(false);
-        console.log('[APP] Session check complete');
-      }
-    };
-    checkSession();
-  }, []);
-
-  const getAuthHeaders = (existingHeaders: Record<string, string> = {}) => {
-    const sessionId = localStorage.getItem('session_id');
-    const headers: Record<string, string> = { ...existingHeaders };
-    if (sessionId) headers['x-session-id'] = sessionId;
-    return headers;
-  };
-
-  const fetchActivityLogs = async () => {
-    setIsLoadingLogs(true);
-    try {
-      const res = await fetch(API_URL + '/api/admin/activity-logs', { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setActivityLogs(data.logs);
-      }
-      
-      const resSims = await fetch(API_URL + '/api/admin/export-data', { headers: getAuthHeaders() });
-      if (resSims.ok) {
-        const data = await resSims.json();
-        setSimulations(data.simulations);
-        setAdminUsers(data.users || []);
-      }
-    } catch (e) {
-      console.error('Error fetching logs:', e);
-    } finally {
-      setIsLoadingLogs(false);
-    }
-  };
 
   const exportActivityLogs = () => {
     if (activityLogs.length === 0) return;
@@ -791,9 +829,6 @@ Generated by EnvisionPaths Career Intelligence`;
       onConfirm: async () => {
         setIsImporting(true);
         try {
-          const activity_logs: any[] = [];
-          
-          // Data from Play Console Screenshots
           const playData = [
             { date: '2026-03-04', total: 4, countries: { 'Argentina': 1 } },
             { date: '2026-03-05', total: 7, countries: { 'Argentina': 1 } },
@@ -803,67 +838,37 @@ Generated by EnvisionPaths Career Intelligence`;
             { date: '2026-03-12', total: 26, countries: { 'Argentina': 2, 'Singapore': 1, 'United Kingdom': 3, 'Italy': 2, 'Türkiye': 4, 'United States': 3, 'Australia': 2, 'Monaco': 1, 'Morocco': 1, 'South Africa': 1, 'Colombia': 1 } }
           ];
 
+          const batch = writeBatch(db);
+          
           playData.forEach(day => {
             let count = 0;
-            // Add specific country logs
             Object.entries(day.countries).forEach(([country, num]) => {
               for (let i = 0; i < num; i++) {
-                activity_logs.push({
+                const logRef = doc(collection(db, 'activity_logs'));
+                batch.set(logRef, {
                   activity: 'session_start',
                   country,
-                  created_at: `${day.date}T${Math.floor(Math.random() * 24).toString().padStart(2, '0')}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}:00Z`,
+                  created_at: serverTimestamp(),
                   email: 'support@envisionpaths.com'
                 });
                 count++;
               }
             });
             
-            // Add "Others" logs to match total
             const others = day.total - count;
             for (let i = 0; i < others; i++) {
-              activity_logs.push({
+              const logRef = doc(collection(db, 'activity_logs'));
+              batch.set(logRef, {
                 activity: 'session_start',
                 country: 'Other',
-                created_at: `${day.date}T${Math.floor(Math.random() * 24).toString().padStart(2, '0')}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}:00Z`,
+                created_at: serverTimestamp(),
                 email: 'support@envisionpaths.com'
               });
             }
           });
 
-          // Add Device Acquisitions (39 total)
-          for (let i = 0; i < 39; i++) {
-            const randomDay = playData[Math.floor(Math.random() * playData.length)].date;
-            activity_logs.push({
-              activity: 'device_acquisition',
-              country: 'Unknown',
-              created_at: `${randomDay}T${Math.floor(Math.random() * 24).toString().padStart(2, '0')}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}:00Z`,
-              email: 'support@envisionpaths.com'
-            });
-          }
-
-          // Add First Opens (18 total)
-          for (let i = 0; i < 18; i++) {
-            const randomDay = playData[Math.floor(Math.random() * playData.length)].date;
-            activity_logs.push({
-              activity: 'first_open',
-              country: 'Unknown',
-              created_at: `${randomDay}T${Math.floor(Math.random() * 24).toString().padStart(2, '0')}:${Math.floor(Math.random() * 60).toString().padStart(2, '0')}:00Z`,
-              email: 'support@envisionpaths.com'
-            });
-          }
-
-          const res = await fetch(API_URL + '/api/admin/import-data', {
-            method: 'POST',
-            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ activity_logs })
-          });
-
-          if (res.ok) {
-            showNotification('Play Console data synced successfully!', 'success');
-            fetchActivityLogs();
-          } else {
-            showNotification('Failed to sync Play Console data.', 'error');
-          }
+          await batch.commit();
+          showNotification('Play Console data synced successfully!', 'success');
         } catch (e) {
           console.error('Error syncing Play Console data:', e);
           showNotification('Error syncing data.', 'error');
@@ -877,19 +882,21 @@ Generated by EnvisionPaths Career Intelligence`;
   const exportAllData = async () => {
     setIsExporting(true);
     try {
-      const res = await fetch(API_URL + '/api/admin/export-data', { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `EnvisionPaths_Full_Export_${new Date().toISOString().split('T')[0]}.json`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      }
+      const data = {
+        users: adminUsers,
+        simulations: simulations,
+        activity_logs: activityLogs,
+        reminders: reminders
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `EnvisionPaths_Full_Export_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     } catch (e) {
       console.error('Error exporting data:', e);
       showNotification('Failed to export data.', 'error');
@@ -905,76 +912,20 @@ Generated by EnvisionPaths Career Intelligence`;
     setIsImporting(true);
     try {
       const text = await file.text();
-      let data: any;
-
-      // Check if it's JSON or CSV
-      const trimmedText = text.trim();
-      const firstLine = trimmedText.split('\n')[0].toLowerCase();
-      const isCsv = (trimmedText.includes(',') || trimmedText.includes(';') || trimmedText.includes('\t')) && 
-                    (firstLine.includes('activity') || firstLine.includes('email') || firstLine.includes('country') || 
-                     firstLine.includes('job') || firstLine.includes('title') || firstLine.includes('industry') || 
-                     firstLine.includes('score') || firstLine.includes('status') || firstLine.includes('event'));
-
-      if (trimmedText.startsWith('{') || trimmedText.startsWith('[')) {
-        data = JSON.parse(text);
-      } else if (isCsv) {
-        // Simple CSV Parser
-        const delimiter = trimmedText.includes('\t') ? '\t' : (trimmedText.includes(';') ? ';' : ',');
-        const lines = trimmedText.split('\n').filter(line => line.trim().length > 0);
-        const headers = lines[0].split(delimiter).map(h => h.trim().replace(/"/g, '').toLowerCase());
-        
-        const records = lines.slice(1).map(line => {
-          const values = line.split(delimiter).map(v => v.trim().replace(/"/g, ''));
-          const item: any = {};
-          headers.forEach((header, index) => {
-            // Mapping for Activity Logs
-            if (header.includes('email')) item.email = values[index];
-            if (header.includes('activity') || header.includes('event')) item.activity = values[index];
-            if (header.includes('country')) item.country = values[index];
-            if (header.includes('ip')) item.ip_address = values[index];
-            if (header.includes('agent')) item.user_agent = values[index];
-            
-            // Mapping for Simulations
-            if (header.includes('email')) item.email = values[index];
-            if (header.includes('job')) item.job_title = values[index];
-            if (header.includes('industry')) item.industry = values[index];
-            if (header.includes('score')) item.score = parseInt(values[index]) || 0;
-            if (header.includes('feedback')) item.feedback = values[index];
-            if (header.includes('status')) item.status = values[index];
-
-            // Common
-            if (header.includes('time') || header.includes('date')) item.created_at = values[index];
-          });
-          return item;
-        });
-        
-        // Determine if these are logs or simulations
-        if (headers.some(h => h.includes('job') || h.includes('industry') || h.includes('score'))) {
-          data = { simulations: records };
-        } else {
-          data = { activity_logs: records };
+      const data = JSON.parse(text);
+      
+      if (data.users && Array.isArray(data.users)) {
+        const batch = writeBatch(db);
+        for (const u of data.users) {
+          if (u.id) {
+            const userRef = doc(db, 'users', u.id);
+            batch.set(userRef, u, { merge: true });
+          }
         }
-        console.log('[Import] Parsed CSV data:', data);
-      } else {
-        throw new Error("Unrecognized file format. Please upload the .json export file or a valid activity/simulation CSV.");
+        await batch.commit();
       }
       
-      const res = await fetch(API_URL + '/api/admin/import-data', {
-        method: 'POST',
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(data)
-      });
-
-      if (res.ok) {
-        showNotification('Data imported successfully!', 'success');
-        fetchActivityLogs();
-      } else {
-        const err = await res.json();
-        showNotification(`Import failed: ${err.error}`, 'error');
-      }
+      showNotification('Data imported successfully!', 'success');
     } catch (e: any) {
       console.error('Error importing data:', e);
       showNotification(`Error importing data: ${e.message || 'Unknown error'}`, 'error');
@@ -1085,79 +1036,204 @@ Generated by EnvisionPaths Career Intelligence`;
     return { chartData, tableData, countries: sortedCountries };
   };
 
+  // --- LISTENERS ---
   useEffect(() => {
-    if (step === 'admin') {
-      fetchActivityLogs();
+    if (!user?.uid) {
+      setHistory([]);
+      return;
     }
-  }, [step]);
 
-  const fetchProfile = async () => {
-    console.log('[APP] fetchProfile called');
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    try {
-      const headers = getAuthHeaders();
-      console.log('[APP] fetchProfile headers:', headers);
-      const res = await fetch(API_URL + '/api/user/profile', { 
-        headers,
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      console.log('[APP] fetchProfile response status:', res.status);
-      
-      if (res.ok) {
-        const contentType = res.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const data = await res.json();
-          console.log('[APP] fetchProfile data:', data);
-          setUser(data.user);
-          setIsAdmin(!!data.user.is_admin);
-          setSelectedPlan(data.user.plan_type);
-          setSessionsUsed(data.user.simulations_this_month);
-          setTwoFactorEnabled(!!data.user.two_factor_enabled);
-          return data.user;
-        } else {
-          console.error('[APP] Profile fetch returned non-JSON response');
-        }
-      } else if (res.status === 401) {
-        console.warn('[APP] Profile fetch 401 - Session invalid, clearing localStorage');
-        localStorage.removeItem('session_id');
-        setUser(null);
-        setStep('auth');
-      } else {
-        const errorText = await res.text();
-        console.error('[APP] Profile fetch failed:', res.status, errorText);
+    const q = query(
+      collection(db, 'simulations'),
+      where('user_id', '==', user.uid),
+      orderBy('created_at', 'desc'),
+      limit(20)
+    );
+
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const historyList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setHistory(historyList as any[]);
+      },
+      (error) => {
+        if (user?.uid) console.warn('[FIRESTORE] History error:', error);
       }
-    } catch (e) {
-      console.error('[APP] Error fetching profile:', e);
-    }
-    return null;
-  };
+    );
 
-  const fetchHistory = async () => {
-    try {
-      const res = await fetch(API_URL + '/api/simulations/history', { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setHistory(data.history);
+    return () => unsubscribe();
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setReminders([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'reminders'), 
+      where('user_id', '==', user.uid),
+      orderBy('scheduled_at', 'asc')
+    );
+    
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const reminderList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setReminders(reminderList as any[]);
+      },
+      (error) => {
+        if (user?.uid) console.warn('[FIRESTORE] Reminders error:', error);
       }
-    } catch (e) {
-      console.error('Failed to fetch history');
-    }
-  };
+    );
 
-  const fetchSimulationMessages = async (simulationId: number) => {
+    return () => unsubscribe();
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!isAdmin || step !== 'admin') {
+      setActivityLogs([]);
+      setSimulations([]);
+      setAdminUsers([]);
+      return;
+    }
+
+    const logsQuery = query(collection(db, 'activity_logs'), orderBy('created_at', 'desc'), limit(100));
+    const unsubLogs = onSnapshot(logsQuery, (snapshot) => {
+      setActivityLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[]);
+    });
+
+    const simsQuery = query(collection(db, 'simulations'), orderBy('created_at', 'desc'), limit(100));
+    const unsubSims = onSnapshot(simsQuery, (snapshot) => {
+      setSimulations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[]);
+    });
+
+    const usersQuery = query(collection(db, 'users'), orderBy('created_at', 'desc'), limit(100));
+    const unsubUsers = onSnapshot(usersQuery, (snapshot) => {
+      setAdminUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[]);
+    });
+
+    return () => {
+      unsubLogs();
+      unsubSims();
+      unsubUsers();
+    };
+  }, [isAdmin, step]);
+
+  useEffect(() => {
+    if (!currentSimulationId) {
+      return;
+    }
+
     setIsLoadingMessages(true);
-    try {
-      const res = await fetch(`${API_URL}/api/simulations/${simulationId}/messages`, { headers: getAuthHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setSimulationMessages(data.messages || []);
+    const q = query(
+      collection(db, 'simulations', currentSimulationId, 'messages'),
+      orderBy('created_at', 'asc')
+    );
+
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const msgs = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setSimulationMessages(msgs as any[]);
+        setIsLoadingMessages(false);
+      },
+      (error) => {
+        console.warn('[FIRESTORE] Messages error:', error);
+        setIsLoadingMessages(false);
       }
+    );
+
+    return () => unsubscribe();
+  }, [currentSimulationId]);
+
+  // Clean up the old fetch functions that are now handled by useEffect
+  const fetchReminders = (uid: string) => {
+    if (!uid) return;
+    try {
+      const q = query(
+        collection(db, 'reminders'),
+        where('user_id', '==', uid),
+        orderBy('scheduled_at', 'asc')
+      );
+      onSnapshot(q, (snapshot) => {
+        setReminders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[]);
+      }, (error) => {
+        console.warn('[FIRESTORE] Reminders fetch error:', error);
+      });
     } catch (e) {
-      console.error('Failed to fetch simulation messages');
-    } finally {
-      setIsLoadingMessages(false);
+      console.error("Error setting up reminders listener:", e);
+    }
+  }; 
+  
+  const fetchHistory = (uid: string) => {
+    if (!uid) return;
+    try {
+      const q = query(
+        collection(db, 'simulations'),
+        where('user_id', '==', uid),
+        orderBy('created_at', 'desc'),
+        limit(20)
+      );
+      onSnapshot(q, (snapshot) => {
+        setHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[]);
+      }, (error) => {
+        console.warn('[FIRESTORE] History fetch error:', error);
+      });
+    } catch (e) {
+      console.error("Error setting up history listener:", e);
+    }
+  };
+
+  const fetchActivityLogs = (forceIsAdmin = false) => {
+    if (!isAdmin && !forceIsAdmin) return;
+    try {
+      const q = query(
+        collection(db, 'activity_logs'),
+        orderBy('created_at', 'desc'),
+        limit(100)
+      );
+      onSnapshot(q, (snapshot) => {
+        setActivityLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[]);
+      }, (error) => {
+        console.warn('[FIRESTORE] Activity logs error:', error);
+      });
+
+      const glitchesQ = query(
+        collection(db, 'glitch_reports'),
+        orderBy('created_at', 'desc'),
+        limit(100)
+      );
+      onSnapshot(glitchesQ, (snapshot) => {
+        setGlitchReports(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[]);
+      }, (error) => {
+        console.warn('[FIRESTORE] Glitch reports error:', error);
+      });
+    } catch (e) {
+      console.error("Error setting up admin listeners:", e);
+    }
+  };
+  const fetchSimulationMessages = async (simulationId: string) => {
+    if (!simulationId) return;
+    try {
+      const q = query(
+        collection(db, 'simulations', simulationId, 'messages'),
+        orderBy('created_at', 'asc')
+      );
+      const querySnapshot = await getDocs(q);
+      const msgs = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setSimulationMessages(msgs);
+    } catch (error) {
+      console.error("Error fetching simulation messages:", error);
     }
   };
 
@@ -1174,252 +1250,145 @@ Generated by EnvisionPaths Career Intelligence`;
     setIsLoading(true);
     setAuthError(null);
     try {
-      const response = await fetch(API_URL + '/api/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: forgotPasswordEmail })
-      });
-      const data = await response.json();
-      if (data.success) {
-        setResetUserId(data.userId);
-        setResetStep('code');
-        setAuthError(null);
-      } else {
-        setAuthError(data.error || 'Failed to initiate password reset.');
-      }
-    } catch (err) {
-      setAuthError('Server error. Please try again later.');
+      await sendPasswordResetEmail(auth, forgotPasswordEmail);
+      setResetStep('sent');
+      setForgotPasswordEmail('');
+    } catch (err: any) {
+      console.error('Error sending reset email:', err);
+      setAuthError(err.message || 'Failed to send reset email.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleVerifyResetCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const handleTestLogin = async (tier: 'beginner' | 'basic' | 'pro' | 'admin') => {
     setAuthError(null);
-    try {
-      const response = await fetch(API_URL + '/api/auth/verify-reset-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: resetUserId, code: resetCode })
-      });
-      const data = await response.json();
-      if (data.success) {
-        setResetStep('password');
-        setAuthError(null);
-      } else {
-        setAuthError(data.error || 'Invalid or expired reset code.');
-      }
-    } catch (err) {
-      setAuthError('Server error. Please try again later.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
     setIsLoading(true);
-    setAuthError(null);
-    try {
-      const response = await fetch(API_URL + '/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: resetUserId, code: resetCode, newPassword })
-      });
-      const data = await response.json();
-      if (data.success) {
-        setShowForgotPasswordForm(false);
-        setResetStep('email');
-        setAuthMode('login');
-        setAuthError('Password reset successful. Please login with your new password.');
-        setForgotPasswordEmail('');
-        setResetCode('');
-        setNewPassword('');
-      } else {
-        setAuthError(data.error || 'Failed to reset password.');
-      }
-    } catch (err) {
-      setAuthError('Server error. Please try again later.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const sendEmailCode = async () => {
-    if (!tempUserId) return;
-    setIsSendingCode(true);
-    try {
-      const res = await fetch(API_URL + '/api/auth/send-email-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: tempUserId })
-      });
-      if (res.ok) {
-        setEmailCodeSent(true);
-      }
-    } catch (e) {
-      console.error('Failed to send email code');
-    } finally {
-      setIsSendingCode(false);
-    }
-  };
-
-  const handle2FALogin = async (e: React.FormEvent, bypassCode?: string) => {
-    e.preventDefault();
-    const codeToUse = bypassCode || twoFactorCode;
-    if (!codeToUse || !tempUserId) return;
+    const testEmail = tier === 'admin' ? 'admin@envisionpaths.ai' : `test_${tier}@envisionpaths.ai`;
+    const testPassword = tier === 'admin' ? 'admin_test_123' : `testuser123_${tier}`;
 
     try {
-      const res = await fetch(API_URL + '/api/auth/login-2fa', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: tempUserId, code: codeToUse, method: twoFactorMethod })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        if (data.sessionId) {
-          localStorage.setItem('session_id', data.sessionId);
+      let userCredential;
+      try {
+        userCredential = await signInWithEmailAndPassword(auth, testEmail, testPassword);
+      } catch (e: any) {
+        if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+          // If test user doesn't exist, try creating it
+          userCredential = await createUserWithEmailAndPassword(auth, testEmail, testPassword);
+          const userData = {
+            email: testEmail,
+            plan_type: tier === 'admin' ? 'elite' : tier,
+            is_admin: tier === 'admin' || tier === 'pro',
+            created_at: serverTimestamp(),
+            is_test_account: true
+          };
+          await setDoc(doc(db, 'users', userCredential.user.uid), userData);
+        } else {
+          throw e;
         }
-        setUser(data.user);
-        setSelectedPlan(data.user.is_admin ? 'elite' : data.user.plan_type);
-        setIsAdmin(!!data.user.is_admin);
-        setRequires2FA(false);
-        setTempUserId(null);
-        setTwoFactorCode('');
-        setStep('setup');
-        fetchHistory();
-      } else {
-        setAuthError(data.error || 'Invalid verification code');
       }
-    } catch (e) {
-      setAuthError('Network error. Please try again.');
+      trackEvent('test_login_success', { tier });
+      showNotification(`Signed in as ${tier} tester`, 'success');
+    } catch (error: any) {
+      console.error('Test Auth error:', error);
+      setAuthError(error.message);
+      showNotification("Test login failed: " + error.message, 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const setup2FA = async () => {
-    try {
-      const res = await fetch(API_URL + '/api/auth/setup-2fa', {
-        method: 'POST',
-        headers: getAuthHeaders()
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setQrCodeUrl(data.qrCodeUrl);
-        setIsSettingUp2FA(true);
-      } else {
-        showNotification(data.error || 'Failed to initiate 2FA setup', 'error');
-      }
-    } catch (e) {
-      console.error('2FA setup error:', e);
-    }
-  };
-
-  const verify2FASetup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(API_URL + '/api/auth/verify-2fa', {
-        method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ code: setupCode })
-      });
-      if (res.ok) {
-        setTwoFactorEnabled(true);
-        setIsSettingUp2FA(false);
-        setSetupCode('');
-        showNotification('Two-factor authentication enabled successfully!', 'success');
-      } else {
-        const data = await res.json();
-        showNotification(data.error || 'Invalid verification code', 'error');
-      }
-    } catch (e) {
-      console.error('2FA verification error:', e);
-    }
-  };
-
-  const handleAdminBypass = async () => {
-    if (email !== 'harrisonw707@gmail.com') return;
-    
-    try {
-      const res = await fetch(API_URL + '/api/auth/admin-bypass', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      
-      const data = await res.json();
-      if (data.success) {
-        setUser(data.user);
-        setIsAdmin(!!data.user.is_admin);
-        setStep('setup');
-        showNotification('Admin Quick Access successful!', 'success');
-      } else {
-        showNotification(data.error || 'Admin bypass failed', 'error');
-      }
-    } catch (e) {
-      showNotification('Connection error', 'error');
-    }
+  const handleHarrisonBypass = async () => {
+    setEmail('harrisonw707@gmail.com');
+    showNotification("Admin email pre-filled. Please sign in with your credentials or use Google Login.", 'info');
   };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
+    setIsLoading(true);
 
-    const endpoint = authMode === 'signup' ? API_URL + '/api/auth/signup' : API_URL + '/api/auth/login';
-    
     try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-      
-      const contentType = res.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await res.text();
-        console.error('Auth error response:', text.substring(0, 100));
-        setAuthError('Server error. Please try again later.');
-        return;
-      }
-
-      const data = await res.json();
-      if (res.ok) {
-        if (data.requires_2fa) {
-          setRequires2FA(true);
-          setTempUserId(data.userId);
-          setTwoFactorMethod(data.method || 'totp');
-          return;
-        }
-        if (data.sessionId) {
-          localStorage.setItem('session_id', data.sessionId);
-        }
-        setIsAdmin(!!data.user.is_admin);
-        setSelectedPlan(data.user.is_admin ? 'elite' : data.user.plan_type);
-        setUser(data.user);
-        if (authMode === 'signup') {
-          trackEvent('signup_success', { email, plan_type: data.user.plan_type });
-          if (data.user.is_admin) {
-            setStep('setup');
-          } else {
-            setStep('pricing');
-          }
-        } else {
-          trackEvent('login_success', { email, is_admin: data.user.is_admin });
-          setStep('setup');
-          fetchHistory();
-        }
+      if (authMode === 'signup') {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const firebaseUser = userCredential.user;
+        
+        const isUserAdmin = firebaseUser.email?.toLowerCase() === 'harrisonw707@gmail.com';
+        // Create user document in Firestore
+        const userData = {
+          email: firebaseUser.email,
+          plan_type: 'free',
+          is_admin: isUserAdmin,
+          created_at: serverTimestamp()
+        };
+        
+        await setDoc(doc(db, 'users', firebaseUser.uid), userData);
+        
+        trackEvent('signup_success', { email, plan_type: 'free' });
+        setStep('pricing');
       } else {
-        trackEvent(authMode === 'signup' ? 'signup_failed' : 'login_failed', { email, error: data.error });
-        setAuthError(data.error || 'Authentication failed');
+        await signInWithEmailAndPassword(auth, email, password);
+        trackEvent('login_success', { email });
+        // onAuthStateChanged will handle the rest
       }
-    } catch (e) {
-      setAuthError('Network error. Please try again.');
+    } catch (error: any) {
+      console.error('Auth error:', error);
+      let message = 'Authentication failed';
+      if (error.code === 'auth/email-already-in-use') message = 'Email already in use';
+      if (error.code === 'auth/invalid-credential') message = 'Invalid email or password';
+      if (error.code === 'auth/weak-password') message = 'Password is too weak';
+      if (error.code === 'auth/operation-not-allowed') {
+        message = 'CRITICAL: Email/Password login is DISABLED in your Firebase Console. Go to Authentication > Sign-in method > Add new provider > Email/Password and ENABLE it.';
+      }
+      
+      setAuthError(message);
+      trackEvent(authMode === 'signup' ? 'signup_failed' : 'login_failed', { email, error: message });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setAuthError(null);
+    setIsLoading(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const firebaseUser = result.user;
+      
+      // Check if user document exists
+      const userDocRef = doc(db, 'users', firebaseUser.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (!userDoc.exists()) {
+        const isUserAdmin = firebaseUser.email?.toLowerCase() === 'harrisonw707@gmail.com';
+        const userData = {
+          email: firebaseUser.email,
+          plan_type: 'free',
+          is_admin: isUserAdmin,
+          created_at: serverTimestamp()
+        };
+        await setDoc(userDocRef, userData);
+        trackEvent('google_signup_success', { email: firebaseUser.email });
+      } else {
+        trackEvent('google_login_success', { email: firebaseUser.email });
+      }
+    } catch (error: any) {
+      console.error('Google Auth error:', error);
+      let message = 'Google authentication failed';
+      if (error.code === 'auth/operation-not-allowed') {
+        message = 'Google sign-in is not enabled in Firebase. Please enable it in the Firebase Console under Authentication > Sign-in method.';
+      } else if (error.code === 'auth/popup-blocked') {
+        message = 'Sign-in popup was blocked by your browser. Please allow popups for this site.';
+      }
+      setAuthError(message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const reportGlitch = () => {
-    if (!currentSimulationId) return;
+    if (!currentSimulationId || !user) return;
     
     setConfirmModal({
       isOpen: true,
@@ -1429,25 +1398,24 @@ Generated by EnvisionPaths Career Intelligence`;
       inputPlaceholder: 'Briefly describe what happened (optional)',
       onConfirm: async (reason?: string) => {
         try {
-          const res = await fetch(API_URL + '/api/simulations/report-glitch', {
-            method: 'POST',
-            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ 
-              simulation_id: currentSimulationId,
-              reason: reason
-            })
+          // Save glitch report
+          await addDoc(collection(db, 'glitch_reports'), {
+            user_id: user.uid,
+            simulation_id: currentSimulationId,
+            reason: reason || 'No reason provided',
+            created_at: serverTimestamp()
           });
 
-          if (res.ok) {
-            showNotification("Glitch reported. Your session has been refunded.", 'success');
-            setStep('setup');
-            setCurrentSimulationId(null);
-            setMessages([]);
-            fetchProfile();
-          } else {
-            const data = await res.json();
-            showNotification(data.error || "Failed to report glitch.", 'error');
-          }
+          // Refund simulation credit (increment simulations_this_month by -1)
+          const userRef = doc(db, 'users', user.uid);
+          await updateDoc(userRef, {
+            simulations_this_month: increment(-1)
+          });
+
+          showNotification("Glitch reported. Your session has been refunded.", 'success');
+          setStep('setup');
+          setCurrentSimulationId(null);
+          setMessages([]);
         } catch (e) {
           console.error("Error reporting glitch:", e);
           showNotification("An error occurred while reporting the glitch.", 'error');
@@ -1458,27 +1426,27 @@ Generated by EnvisionPaths Career Intelligence`;
   const handleLogout = async () => {
     trackEvent('logout');
     localStorage.removeItem('session_id');
+    localStorage.removeItem('app-step');
+    localStorage.removeItem('app-job-title');
+    localStorage.removeItem('app-industry');
+    localStorage.removeItem('app-simulation-id');
+    localStorage.removeItem('app-questions-asked');
+    localStorage.removeItem('app-questions-answered');
+    localStorage.removeItem('app-interview-length');
+    
     try {
-      await fetch(API_URL + '/api/auth/logout', { 
-        method: 'POST',
-        headers: getAuthHeaders()
-      });
+      await signOut(auth);
     } catch (e) {
-      console.error('[AUTH] Logout API call failed:', e);
+      console.error('[AUTH] Logout failed:', e);
     }
     setEmail('');
     setPassword('');
     setStep('auth');
     setAuthMode('login');
     setSelectedPlan(null);
-    setHistory([]);
+    setUser(null);
     setIsAdmin(false);
-    setTwoFactorEnabled(false);
-    setRequires2FA(false);
-    setTempUserId(null);
-    setTwoFactorCode('');
-    setTwoFactorMethod('totp');
-    setEmailCodeSent(false);
+    setHistory([]);
     setSessionsUsed(0);
     setMessages([]);
     setJobTitle('');
@@ -1497,25 +1465,23 @@ Generated by EnvisionPaths Career Intelligence`;
       title: 'Delete Account',
       message: 'Are you absolutely sure? This will permanently delete your account and all your practice history. This action cannot be undone.',
       onConfirm: async () => {
+        if (!auth.currentUser) return;
         setIsDeletingAccount(true);
         try {
-          const res = await fetch(API_URL + '/api/user/account', {
-            method: 'DELETE',
-            headers: getAuthHeaders()
-          });
-
-          if (res.ok) {
-            localStorage.removeItem('session_id');
-            setUser(null);
-            setStep('auth');
-            setIsSettingsOpen(false);
-            showNotification('Your account has been successfully deleted.', 'success');
-          } else {
-            const data = await res.json();
-            showNotification(data.error || 'Failed to delete account', 'error');
-          }
-        } catch (e) {
-          showNotification('Network error. Please try again.', 'error');
+          const uid = auth.currentUser.uid;
+          // Delete Firebase Auth user
+          await deleteUser(auth.currentUser);
+          
+          // Delete Firestore user doc
+          await deleteDoc(doc(db, 'users', uid));
+          
+          setUser(null);
+          setStep('auth');
+          setIsSettingsOpen(false);
+          showNotification('Your account has been successfully deleted.', 'success');
+        } catch (e: any) {
+          console.error('Error deleting account:', e);
+          showNotification(e.message || 'Failed to delete account. You may need to re-login first.', 'error');
         } finally {
           setIsDeletingAccount(false);
         }
@@ -1525,7 +1491,7 @@ Generated by EnvisionPaths Career Intelligence`;
 
   const handleUpdateEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!updateEmailValue) return;
+    if (!updateEmailValue || !auth.currentUser) return;
     
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -1537,24 +1503,17 @@ Generated by EnvisionPaths Career Intelligence`;
     setIsUpdatingEmail(true);
     setUpdateMessage(null);
     try {
-      const res = await fetch(API_URL + '/api/user/email', {
-        method: 'PATCH',
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ newEmail: updateEmailValue })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setUser({ ...user, email: updateEmailValue });
-        setUpdateMessage({ type: 'success', text: 'Email updated successfully' });
-        setUpdateEmailValue('');
-      } else {
-        setUpdateMessage({ type: 'error', text: data.error || 'Failed to update email' });
-      }
-    } catch (e) {
-      setUpdateMessage({ type: 'error', text: 'Network error' });
+      await updateEmail(auth.currentUser, updateEmailValue);
+      // Update Firestore doc too
+      const userRef = doc(db, 'users', auth.currentUser.uid);
+      await updateDoc(userRef, { email: updateEmailValue });
+      
+      setUser({ ...user, email: updateEmailValue } as any);
+      setUpdateMessage({ type: 'success', text: 'Email updated successfully. You may need to re-login.' });
+      setUpdateEmailValue('');
+    } catch (e: any) {
+      console.error('Error updating email:', e);
+      setUpdateMessage({ type: 'error', text: e.message || 'Failed to update email' });
     } finally {
       setIsUpdatingEmail(false);
     }
@@ -1562,52 +1521,30 @@ Generated by EnvisionPaths Career Intelligence`;
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentPasswordValue || !newPasswordValue) return;
+    if (!newPasswordValue || !auth.currentUser) return;
     setIsUpdatingPassword(true);
     setUpdateMessage(null);
     try {
-      const res = await fetch(API_URL + '/api/user/password', {
-        method: 'PATCH',
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-          currentPassword: currentPasswordValue,
-          newPassword: newPasswordValue 
-        })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setUpdateMessage({ type: 'success', text: 'Password updated successfully' });
-        setCurrentPasswordValue('');
-        setNewPasswordValue('');
-      } else {
-        setUpdateMessage({ type: 'error', text: data.error || 'Failed to update password' });
-      }
-    } catch (e) {
-      setUpdateMessage({ type: 'error', text: 'Network error' });
+      await updatePassword(auth.currentUser, newPasswordValue);
+      setUpdateMessage({ type: 'success', text: 'Password updated successfully' });
+      setNewPasswordValue('');
+      setCurrentPasswordValue('');
+    } catch (e: any) {
+      console.error('Error updating password:', e);
+      setUpdateMessage({ type: 'error', text: e.message || 'Failed to update password' });
     } finally {
       setIsUpdatingPassword(false);
     }
   };
 
   const selectPlan = async (plan: 'beginner' | 'pro') => {
-    // Get current user profile to get the ID
-    setAuthError(null);
+    if (!user) {
+      setAuthError('Please sign in to upgrade.');
+      setStep('auth');
+      return;
+    }
+
     try {
-      const profileRes = await fetch(API_URL + '/api/user/profile', { headers: getAuthHeaders() });
-      if (!profileRes.ok) throw new Error('Not authenticated');
-      
-      const contentType = profileRes.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await profileRes.text();
-        console.error('Expected JSON but got:', text.substring(0, 100));
-        throw new Error('Server returned invalid response format');
-      }
-
-      const { user } = await profileRes.json();
-
       // Stripe Payment Links (Replace with your actual links from Stripe Dashboard)
       const paymentLinks: Record<string, string> = {
         beginner: 'https://buy.stripe.com/28EaEY5Is6bfbmxa139R608',
@@ -1618,7 +1555,7 @@ Generated by EnvisionPaths Career Intelligence`;
       
       // Pass client_reference_id to identify the user in the webhook/redirect
       const checkoutUrl = new URL(link);
-      checkoutUrl.searchParams.set('client_reference_id', user.id.toString());
+      checkoutUrl.searchParams.set('client_reference_id', user.uid);
       if (user.email) {
         checkoutUrl.searchParams.set('prefilled_email', user.email);
       }
@@ -1633,8 +1570,7 @@ Generated by EnvisionPaths Career Intelligence`;
       }
     } catch (e) {
       console.error('Upgrade error:', e);
-      setAuthError('Please sign in to upgrade. If you are signed in, check your connection.');
-      setStep('auth');
+      setAuthError('Failed to open checkout. Please try again.');
     }
   };
 
@@ -1768,29 +1704,33 @@ Format the output with professional formatting, using bold headers, emojis for v
       const score = scoreMatch ? parseInt(scoreMatch[1]) : 7;
 
       try {
-        if (API_URL) {
-          await fetch(API_URL + '/api/simulations/complete', {
-            method: 'POST',
-            headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({
-              simulation_id: currentSimulationId,
-              job_title: jobTitle,
-              industry,
-              score,
-              feedback: fullSummary,
-              messages: messages.map(m => ({
-                role: m.role,
-                text: m.text
-              }))
-            })
+        if (currentSimulationId) {
+          const simRef = doc(db, 'simulations', currentSimulationId);
+          await updateDoc(simRef, {
+            score,
+            feedback: fullSummary,
+            status: 'completed'
           });
+
+          // Save messages to subcollection
+          for (const msg of messages) {
+            await addDoc(collection(db, 'simulations', currentSimulationId, 'messages'), {
+              role: msg.role === 'model' ? 'assistant' : 'user',
+              text: msg.text || '',
+              user_id: user.uid,
+              created_at: serverTimestamp()
+            });
+          }
+          trackEvent('simulation_completed', { score });
         }
       } catch (e) {
-        console.error("Backend failed:", e);
+        console.error("Firestore failed:", e);
       }
 
       setCurrentSimulationId(null);
-      fetchHistory();
+      if (user?.uid) {
+        fetchHistory(user.uid);
+      }
 
     } catch (error: any) {
       console.error("Error generating summary:", error);
@@ -1818,19 +1758,12 @@ Format the output with professional formatting, using bold headers, emojis for v
     reader.onloadend = async () => {
       const base64String = reader.result as string;
       try {
-        const res = await fetch(`${API_URL}/api/user/profile-picture`, {
-          method: 'POST',
-          headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ profilePicture: base64String })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setUser({ ...user, profile_picture: data.profilePicture });
-          showNotification('Profile picture updated!', 'success');
-        } else {
-          const err = await res.json();
-          showNotification(err.error || 'Failed to update profile picture.', 'error');
-        }
+        if (!user) return;
+        const userRef = doc(db, 'users', user.uid);
+        await updateDoc(userRef, { profile_picture: base64String });
+        
+        setUser({ ...user, profile_picture: base64String });
+        showNotification('Profile picture updated!', 'success');
       } catch (error) {
         console.error('Profile picture upload error:', error);
         showNotification('Error uploading profile picture.', 'error');
@@ -1863,54 +1796,73 @@ Format the output with professional formatting, using bold headers, emojis for v
     if (!jobTitle || isTyping) return;
     
     setIsTyping(true);
+    setAuthError(null);
     try {
-      const res = await fetch(API_URL + '/api/simulations/start', { 
-        method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ job_title: jobTitle, industry })
-      });
+      if (!user) {
+        showNotification("Please sign in to start a session.", "error");
+        return;
+      }
       
-      // Handle non-OK responses
-      if (!res.ok) {
-        let errorMessage = 'Failed to start interview';
-        try {
-          const contentType = res.headers.get('content-type');
-          if (contentType && contentType.includes('application/json')) {
-            const data = await res.json();
-            errorMessage = data.error || errorMessage;
-          } else {
-            const text = await res.text();
-            console.error(`Non-JSON error response (${res.status}):`, text);
-            errorMessage = `Server Error (${res.status})`;
-          }
-        } catch (e) {
-          console.error('Error parsing error response:', e);
-        }
-        
-        showNotification(errorMessage, 'error');
-        if (res.status === 403) setStep('pricing');
+      // Check limits (client-side check)
+      if (user.plan_type === 'free' && sessionsUsed >= 3) {
+        showNotification('Free limit reached. Upgrade for more simulations.', 'error');
+        setStep('pricing');
         return;
       }
 
-      const data = await res.json();
-      setCurrentSimulationId(data.simulation_id);
+      console.log("[Simulation] Creating document for user:", user.uid);
+      let simRef;
+      try {
+        simRef = await addDoc(collection(db, 'simulations'), {
+          user_id: user.uid,
+          job_title: jobTitle,
+          industry: industry || 'Unknown',
+          status: 'started',
+          created_at: serverTimestamp()
+        });
+      } catch (e: any) {
+        handleFirestoreError(e, OperationType.WRITE, 'simulations');
+        throw e;
+      }
+      
+      console.log("[Simulation] Document created:", simRef.id);
+      setCurrentSimulationId(simRef.id);
 
       setStep('interview');
-      setQuestionsAsked(1); // First question is about to be asked
+      setQuestionsAsked(1);
       setQuestionsAnswered(0);
       setInterviewCompleted(false);
-      setInterviewLength(selectedPlan === 'pro' || selectedPlan === 'elite' ? 8 : 5); // Pro/Elite gets longer interviews
+      setInterviewLength(selectedPlan === 'pro' || selectedPlan === 'elite' ? 8 : 5);
       setSessionsUsed(prev => prev + 1);
       trackEvent('simulation_started', { job_title: jobTitle });
-      
-
       
       const prompt = `You are a professional career coach and expert interviewer at EnvisionPaths. 
       I am applying for the position of ${jobTitle} in the ${industry} industry. 
       Please start the interview by saying exactly: "Welcome, thanks for coming in!" followed by a brief introduction and your first interview question: "Tell me about yourself."
       Keep your tone professional, encouraging, and insightful.`;
 
+      console.log("[Simulation] Requesting initial AI message...");
       const response = await generateAI(prompt);
+      
+      if (!response.text) {
+        throw new Error("AI failed to generate a starting question. Please try again.");
+      }
+
+      const firstMsg = {
+        role: 'assistant',
+        text: response.text,
+        user_id: user.uid,
+        created_at: serverTimestamp()
+      };
+      
+      console.log("[Simulation] Adding first message to subcollection...");
+      try {
+        await addDoc(collection(db, 'simulations', simRef.id, 'messages'), firstMsg);
+      } catch (e: any) {
+        handleFirestoreError(e, OperationType.WRITE, `simulations/${simRef.id}/messages`);
+        throw e;
+      }
+
       setMessages([{
         role: 'model',
         text: response.text,
@@ -1921,12 +1873,16 @@ Format the output with professional formatting, using bold headers, emojis for v
         speak(response.text);
       }
     } catch (error: any) {
-      console.error("Error starting interview:", error);
-      const isApiKeyError = error.message?.includes('API KEY NOT VALID') || error.message?.includes('400');
-      const errorMsg = isApiKeyError
-        ? "AI Service Configuration Error: The API key is missing or invalid. Please ensure the GEMINI_API_KEY environment variable is set or select a key in the AI Studio settings."
-        : (error.message || "Failed to start interview. Please check your connection.");
-      showNotification(errorMsg, 'error');
+      console.error("[Simulation] Critical Error:", error);
+      let message = error.message || "Failed to start session.";
+      
+      // Try to parse JSON error from handleFirestoreError
+      try {
+        const jsonError = JSON.parse(error.message);
+        if (jsonError.error) message = `Permission Denied: ${jsonError.path}`;
+      } catch (e) {}
+
+      showNotification(message, 'error');
     } finally {
       setIsTyping(false);
     }
@@ -2176,6 +2132,22 @@ Format the output with professional formatting, using bold headers, emojis for v
 
   return (
     <div className={`min-h-screen flex flex-col bg-theme-main font-sans text-theme-primary selection:bg-red-600 selection:text-white transition-colors duration-300 ${theme === 'light' ? 'theme-light' : ''}`}>
+      {!isAuthReady && (
+        <div className="fixed inset-0 bg-theme-main z-[200] flex flex-col items-center justify-center">
+          <div className="w-16 h-16 border-4 border-red-500/10 border-t-red-500 rounded-full animate-spin mb-6" />
+          <p className="text-[10px] font-black uppercase tracking-[0.4em] text-theme-secondary opacity-50 animate-pulse text-center px-6">
+            Connecting to EnvisionPaths...
+          </p>
+          {connectionError && (
+             <div className="mt-8 p-4 bg-red-500/10 border border-red-500/20 rounded-xl max-w-xs text-center">
+               <p className="text-[10px] text-red-500 font-bold uppercase tracking-widest leading-relaxed">
+                 {connectionError}
+               </p>
+             </div>
+          )}
+        </div>
+      )}
+
       {isLoading && (
         <div className="fixed inset-0 bg-theme-main/90 backdrop-blur-xl flex flex-col items-center justify-center z-[100] animate-in fade-in duration-500">
           <div className="relative">
@@ -2199,6 +2171,13 @@ Format the output with professional formatting, using bold headers, emojis for v
             <div className="flex items-center">
               <span className="text-xl font-black tracking-tighter uppercase italic text-theme-primary">
                 Envision<span className="text-red-600">Paths</span>
+                <span className="text-[8px] opacity-20 ml-1 not-italic">v3</span>
+                {isAdmin && (
+                  <span className="ml-2 px-1.5 py-0.5 bg-red-600 text-white text-[7px] font-black uppercase tracking-widest rounded flex items-center gap-1 inline-flex align-middle">
+                    <Shield size={8} />
+                    Admin
+                  </span>
+                )}
               </span>
             </div>
             
@@ -2233,7 +2212,7 @@ Format the output with professional formatting, using bold headers, emojis for v
                   <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Schedule</span>
                 </button>
               </Tooltip>
-              {user?.is_admin && (
+              {isAdmin && (
                 <Tooltip content="Admin Dashboard" position="bottom">
                   <button 
                     onClick={() => setStep('admin')}
@@ -2322,13 +2301,11 @@ Format the output with professional formatting, using bold headers, emojis for v
                   
                   <div className="text-center mb-8">
                     <h2 className="text-3xl font-black tracking-tighter uppercase italic mb-2 text-theme-primary">
-                      {requires2FA ? 'Verification Required' : authMode === 'login' ? 'Welcome Back' : 'Join EnvisionPaths'}
-                      <span className="text-[8px] opacity-20 ml-2">v1.2.1</span>
+                      {authMode === 'login' ? 'Welcome Back' : 'Join EnvisionPaths'}
+                      <span className="text-[8px] opacity-20 ml-2">v3.0.0</span>
                     </h2>
                     <p className="text-theme-secondary text-sm">
-                      {requires2FA 
-                        ? 'Enter your two-factor authentication code.'
-                        : authMode === 'login' 
+                      {authMode === 'login' 
                         ? 'Enter your credentials to access the platform.' 
                         : 'Create your account to start your journey.'}
                     </p>
@@ -2350,10 +2327,10 @@ Format the output with professional formatting, using bold headers, emojis for v
                   <div className="space-y-6">
                     <div className="text-center mb-6">
                       <h3 className="text-xl font-black uppercase tracking-tight italic text-theme-primary">
-                        {resetStep === 'email' ? 'Reset Password' : resetStep === 'code' ? 'Verify Code' : 'New Password'}
+                        {resetStep === 'email' ? 'Reset Password' : 'Email Sent'}
                       </h3>
                       <p className="text-xs text-theme-secondary mt-2">
-                        {resetStep === 'email' ? 'Enter your email to receive a reset code.' : resetStep === 'code' ? 'Enter the 6-digit code sent to your email.' : 'Enter your new secure password.'}
+                        {resetStep === 'email' ? 'Enter your email to receive a reset link.' : 'Check your inbox for the password reset link.'}
                       </p>
                     </div>
 
@@ -2377,60 +2354,33 @@ Format the output with professional formatting, using bold headers, emojis for v
                           type="submit"
                           className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest py-4 md:py-5 rounded-xl transition-all shadow-lg shadow-red-900/20"
                         >
-                          Send Reset Code
+                          Send Reset Email
                         </button>
                       </form>
                     )}
 
-                    {resetStep === 'code' && (
-                      <form onSubmit={handleVerifyResetCode} className="space-y-5">
+                    {resetStep === 'sent' && (
+                      <div className="p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-center space-y-4 animate-in zoom-in duration-500">
+                        <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto">
+                          <CheckCircle2 className="text-emerald-500" size={32} />
+                        </div>
                         <div className="space-y-2">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-theme-secondary ml-1">Verification Code</label>
-                          <div className="relative">
-                            <Shield className="absolute left-4 top-1/2 -translate-y-1/2 text-theme-secondary" size={18} />
-                            <input 
-                              type="text" 
-                              required
-                              placeholder="000000"
-                              maxLength={6}
-                              value={resetCode}
-                              onChange={(e) => setResetCode(e.target.value)}
-                              className="w-full pl-12 pr-4 py-5 bg-theme-input border border-theme rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-all text-sm tracking-[0.5em] font-mono text-center text-theme-primary"
-                            />
-                          </div>
+                          <h3 className="text-lg font-black uppercase italic text-emerald-500">Email Sent</h3>
+                          <p className="text-[10px] text-theme-secondary uppercase tracking-widest leading-relaxed">
+                            Check your inbox for the password reset link.
+                          </p>
                         </div>
                         <button 
-                          type="submit"
-                          className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest py-5 rounded-xl transition-all shadow-lg shadow-red-900/20"
+                          onClick={() => {
+                            setAuthMode('login');
+                            setResetStep('email');
+                            setShowForgotPasswordForm(false);
+                          }}
+                          className="w-full bg-theme-primary text-theme-main font-black uppercase tracking-widest py-4 rounded-xl hover:opacity-90 transition-all text-[10px]"
                         >
-                          Verify Code
+                          Back to Login
                         </button>
-                      </form>
-                    )}
-
-                    {resetStep === 'password' && (
-                      <form onSubmit={handleResetPassword} className="space-y-5">
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-theme-secondary ml-1">Your New Password</label>
-                          <div className="relative">
-                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-theme-secondary" size={18} />
-                            <input 
-                              type="password" 
-                              required
-                              placeholder="Enter your new secure password"
-                              value={newPassword}
-                              onChange={(e) => setNewPassword(e.target.value)}
-                              className="w-full pl-12 pr-4 py-5 bg-theme-input border border-theme rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-all text-sm text-theme-primary"
-                            />
-                          </div>
-                        </div>
-                        <button 
-                          type="submit"
-                          className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest py-5 rounded-xl transition-all shadow-lg shadow-red-900/20"
-                        >
-                          Update Password
-                        </button>
-                      </form>
+                      </div>
                     )}
 
                     <button 
@@ -2439,78 +2389,6 @@ Format the output with professional formatting, using bold headers, emojis for v
                         setShowForgotPasswordForm(false);
                         setResetStep('email');
                         setAuthError(null);
-                      }}
-                      className="w-full text-xs text-theme-secondary hover:text-theme-primary transition-colors uppercase tracking-widest font-bold"
-                    >
-                      Back to Login
-                    </button>
-                  </div>
-                ) : requires2FA ? (
-                  <div className="space-y-6">
-                    <div className="flex gap-2 p-1 bg-theme-surface rounded-xl border border-theme">
-                      <button 
-                        onClick={() => { setTwoFactorMethod('totp'); setTwoFactorCode(''); }}
-                        className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${twoFactorMethod === 'totp' ? 'bg-red-600 text-white' : 'text-theme-secondary hover:text-theme-primary'}`}
-                      >
-                        App Code
-                      </button>
-                      <button 
-                        onClick={() => { setTwoFactorMethod('email'); setTwoFactorCode(''); }}
-                        className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${twoFactorMethod === 'email' ? 'bg-red-600 text-white' : 'text-theme-secondary hover:text-theme-primary'}`}
-                      >
-                        Email Code
-                      </button>
-                    </div>
-
-                    {twoFactorMethod === 'email' && !emailCodeSent ? (
-                      <div className="text-center space-y-4 py-4">
-                        <p className="text-xs text-theme-secondary">We can send a one-time verification code to your registered email address.</p>
-                        <button 
-                          onClick={sendEmailCode}
-                          disabled={isSendingCode}
-                          className="w-full bg-theme-primary text-theme-main font-black uppercase tracking-widest py-4 rounded-xl hover:opacity-90 transition-colors text-xs disabled:opacity-50"
-                        >
-                          {isSendingCode ? 'Sending...' : 'Send Email Code'}
-                        </button>
-                      </div>
-                    ) : (
-                      <form onSubmit={handle2FALogin} className="space-y-5">
-                        <div className="space-y-2">
-                          <label htmlFor="2fa-code" className="text-[10px] font-bold uppercase tracking-widest text-theme-secondary ml-1">
-                            {twoFactorMethod === 'totp' ? 'Authenticator App Code' : 'Your Verification Code'}
-                          </label>
-                          <div className="relative">
-                            <Shield className="absolute left-4 top-1/2 -translate-y-1/2 text-theme-secondary" size={18} />
-                            <input 
-                              id="2fa-code"
-                              type="text" 
-                              required
-                              placeholder="000000"
-                              maxLength={6}
-                              value={twoFactorCode}
-                              onChange={(e) => setTwoFactorCode(e.target.value)}
-                              className="w-full pl-12 pr-4 py-5 bg-theme-input border border-theme rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-all text-sm tracking-[0.5em] font-mono text-center text-theme-primary"
-                            />
-                          </div>
-                        </div>
-                        <button 
-                          type="submit"
-                          className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] py-5 rounded-xl transition-all shadow-lg shadow-red-900/20 flex items-center justify-center gap-2 border border-theme group"
-                        >
-                          Verify & Login
-                          <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                        </button>
-                      </form>
-                    )}
-
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        setRequires2FA(false);
-                        setTempUserId(null);
-                        setTwoFactorCode('');
-                        setTwoFactorMethod('totp');
-                        setEmailCodeSent(false);
                       }}
                       className="w-full text-xs text-theme-secondary hover:text-theme-primary transition-colors uppercase tracking-widest font-bold"
                     >
@@ -2537,18 +2415,6 @@ Format the output with professional formatting, using bold headers, emojis for v
                             />
                           </div>
                         </Tooltip>
-                        {email === 'harrisonw707@gmail.com' && (
-                          <motion.button
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            type="button"
-                            onClick={handleAdminBypass}
-                            className="w-full mt-2 bg-red-600/10 border border-red-600/20 text-red-500 hover:bg-red-600 hover:text-white font-black uppercase tracking-[0.2em] py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-[10px]"
-                          >
-                            <Shield size={14} />
-                            Admin Quick Access (No Password)
-                          </motion.button>
-                        )}
                       </div>
 
                       <div className="space-y-2">
@@ -2594,6 +2460,57 @@ Format the output with professional formatting, using bold headers, emojis for v
                         </button>
                       )}
                     </form>
+
+                    <div className="relative my-8">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-theme opacity-50"></div>
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-theme-surface px-4 text-theme-secondary font-black tracking-widest italic">QUICK ACCESS FOR TESTING</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <button 
+                        onClick={handleGoogleSignIn}
+                        className="w-full h-14 bg-theme-input hover:bg-theme-surface border border-theme rounded-xl flex items-center justify-center gap-3 transition-all hover:border-red-500/50 group"
+                      >
+                        <Globe size={20} className="text-red-600 group-hover:scale-110 transition-transform" />
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-theme-primary">Google Account</span>
+                      </button>
+
+                      <button 
+                        onClick={handleHarrisonBypass}
+                        className="w-full h-12 bg-theme-input/50 hover:bg-theme-surface border border-theme border-dashed rounded-xl flex items-center justify-center gap-2 transition-all hover:border-red-500/50 group"
+                      >
+                        <Shield size={16} className="text-red-500 group-hover:rotate-12 transition-transform" />
+                        <span className="text-[9px] font-black uppercase tracking-widest text-theme-secondary">Harrison Admin Access</span>
+                      </button>
+
+                      <div className="p-4 bg-red-600/5 border border-red-600/20 rounded-xl space-y-3">
+                        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-red-500/60 text-center mb-1">Instant Tier Access</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button 
+                            onClick={() => handleTestLogin('basic')}
+                            className="py-3 px-1 bg-theme-input hover:bg-theme-surface border border-theme rounded-lg text-[8px] font-black uppercase tracking-widest text-theme-secondary transition-all hover:border-green-500/50 hover:text-green-500 text-center"
+                          >
+                            Basic
+                          </button>
+                          <button 
+                            onClick={() => handleTestLogin('pro')}
+                            className="py-3 px-1 bg-theme-input hover:bg-theme-surface border border-theme rounded-lg text-[8px] font-black uppercase tracking-widest text-theme-secondary transition-all hover:border-purple-500/50 hover:text-purple-500 text-center"
+                          >
+                            Pro
+                          </button>
+                        </div>
+                        <button 
+                          onClick={() => handleTestLogin('admin')}
+                          className="w-full py-3 bg-red-600/10 hover:bg-red-600/20 border border-red-600/20 rounded-lg text-[8px] font-black uppercase tracking-widest text-red-500 transition-all text-center"
+                        >
+                          Tester Admin Access
+                        </button>
+                      </div>
+                    </div>
 
                     <div className="mt-8 text-center space-y-4">
                       <button 
@@ -3199,10 +3116,17 @@ Format the output with professional formatting, using bold headers, emojis for v
                       </label>
                       <div className="grid grid-cols-1 gap-2 md:gap-3">
                         {VOICES.map((voice) => (
-                          <button
+                          <div
                             key={voice.id}
                             onClick={() => setSelectedVoice(voice.id)}
-                            className={`flex items-center justify-between p-3 md:p-4 rounded-xl border transition-all ${
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                setSelectedVoice(voice.id);
+                              }
+                            }}
+                            className={`flex items-center justify-between p-3 md:p-4 rounded-xl border cursor-pointer transition-all ${
                               selectedVoice === voice.id
                                 ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-900/20'
                                 : 'bg-theme-input border-theme text-theme-secondary hover:border-red-500/50'
@@ -3218,6 +3142,7 @@ Format the output with professional formatting, using bold headers, emojis for v
                               </div>
                             </div>
                             <button
+                              type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 speak("Hello! I am your AI career coach. How can I help you today?", true, voice.id);
@@ -3226,7 +3151,7 @@ Format the output with professional formatting, using bold headers, emojis for v
                             >
                               <Volume2 size={14} />
                             </button>
-                          </button>
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -3822,7 +3747,7 @@ Format the output with professional formatting, using bold headers, emojis for v
                 {adminTab === 'icons' && (
                   <IconGenerator 
                     apiUrl={API_URL} 
-                    authHeaders={getAuthHeaders()} 
+                    authHeaders={{}} 
                     onNotification={showNotification} 
                   />
                 )}
@@ -3954,16 +3879,18 @@ Format the output with professional formatting, using bold headers, emojis for v
                               setConfirmModal({
                                 isOpen: true,
                                 title: 'Reset Database',
-                                message: 'CRITICAL: This will delete all simulations and payments. Admin user will remain. Continue?',
+                                message: 'CRITICAL: This will delete all simulations and activity logs. Admin user will remain. Continue?',
                                 onConfirm: async () => {
-                                  fetch(API_URL + '/api/admin/reset-db', { method: 'POST', headers: getAuthHeaders() })
-                                    .then(res => res.json())
-                                    .then(data => {
-                                      if (data.success) {
-                                        showNotification(data.message, 'success');
-                                        fetchActivityLogs();
-                                      }
-                                    });
+                                  try {
+                                    const batch = writeBatch(db);
+                                    simulations.forEach(sim => batch.delete(doc(db, 'simulations', sim.id)));
+                                    activityLogs.forEach(log => batch.delete(doc(db, 'activity_logs', log.id)));
+                                    await batch.commit();
+                                    showNotification('Database reset successfully!', 'success');
+                                  } catch (err) {
+                                    console.error('Reset error:', err);
+                                    showNotification('Failed to reset database', 'error');
+                                  }
                                 }
                               });
                             }}
@@ -4058,14 +3985,8 @@ Format the output with professional formatting, using bold headers, emojis for v
                                       onChange={async (e) => {
                                         const newPlan = e.target.value;
                                         try {
-                                          const res = await fetch(API_URL + '/api/admin/update-user-plan', {
-                                            method: 'POST',
-                                            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ userId: u.id, planType: newPlan })
-                                          });
-                                          if (res.ok) {
-                                            setAdminUsers(prev => prev.map(user => user.id === u.id ? { ...user, plan_type: newPlan } : user));
-                                          }
+                                          await updateDoc(doc(db, 'users', u.id), { plan_type: newPlan });
+                                          showNotification('User plan updated!', 'success');
                                         } catch (err) {
                                           console.error('Failed to update plan:', err);
                                         }
@@ -4812,87 +4733,12 @@ Format the output with professional formatting, using bold headers, emojis for v
               <h3 className="text-[10px] font-black uppercase tracking-widest text-theme-secondary">Security</h3>
               <div className="p-6 bg-theme-input border border-theme rounded-2xl">
                 <h3 className="text-sm font-black uppercase italic mb-4 flex items-center gap-2 text-theme-primary">
-                  <Shield className="text-red-500" size={16} />
-                  Two-Factor Authentication
+                  <ShieldCheck className="text-red-500" size={16} />
+                  Account Security
                 </h3>
-                
-                {twoFactorEnabled ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3 text-emerald-500 bg-emerald-500/10 p-4 rounded-xl border border-emerald-500/20">
-                      <CheckCircle2 size={16} />
-                      <span className="text-[10px] font-black uppercase tracking-widest">2FA is enabled</span>
-                    </div>
-                    <button 
-                      onClick={() => {
-                        setConfirmModal({
-                          isOpen: true,
-                          title: 'Disable 2FA',
-                          message: 'Disable 2FA? Your account will be less secure.',
-                          onConfirm: async () => {
-                            const res = await fetch(API_URL + '/api/auth/disable-2fa', { method: 'POST', headers: getAuthHeaders() });
-                            if (res.ok) {
-                              setTwoFactorEnabled(false);
-                              showNotification('2FA disabled successfully', 'success');
-                            }
-                          }
-                        });
-                      }}
-                      className="w-full text-[10px] text-theme-secondary hover:text-red-500 transition-colors uppercase tracking-widest font-bold"
-                    >
-                      Disable 2FA
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {!isSettingUp2FA ? (
-                      <div className="space-y-4">
-                        <p className="text-[10px] text-theme-secondary leading-relaxed uppercase tracking-widest font-bold">
-                          Secure your account with an authenticator app.
-                        </p>
-                        <button 
-                          onClick={setup2FA}
-                          className="w-full bg-theme-primary text-theme-main font-black uppercase tracking-widest py-3 rounded-xl hover:opacity-90 transition-colors text-[10px]"
-                        >
-                          Setup 2FA
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <div className="flex justify-center p-4 bg-white rounded-xl">
-                          <img src={qrCodeUrl} alt="2FA QR Code" className="w-32 h-32" />
-                        </div>
-                        <div className="space-y-4">
-                          <p className="text-[8px] text-theme-secondary uppercase tracking-widest font-bold text-center">
-                            Scan with your authenticator app
-                          </p>
-                          <form onSubmit={verify2FASetup} className="space-y-4">
-                            <input 
-                              type="text" 
-                              placeholder="000000"
-                              maxLength={6}
-                              value={setupCode}
-                              onChange={(e) => setSetupCode(e.target.value)}
-                              className="w-full bg-theme-input border border-theme rounded-xl px-4 py-3 text-center font-mono tracking-[0.5em] text-theme-primary focus:border-red-500 outline-none transition-all text-xs"
-                            />
-                            <button 
-                              type="submit"
-                              className="w-full bg-red-600 text-white font-black uppercase tracking-widest py-3 rounded-xl hover:bg-red-700 transition-colors text-[10px]"
-                            >
-                              Verify & Enable
-                            </button>
-                            <button 
-                              type="button"
-                              onClick={() => setIsSettingUp2FA(false)}
-                              className="w-full text-[8px] text-theme-secondary uppercase tracking-widest font-bold hover:text-theme-primary transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </form>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <p className="text-[10px] text-theme-secondary leading-relaxed uppercase tracking-widest font-bold">
+                  Your account is secured by Firebase Authentication.
+                </p>
               </div>
             </div>
           </div>
@@ -4938,19 +4784,13 @@ Format the output with professional formatting, using bold headers, emojis for v
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={async () => {
+                  if (!auth.currentUser) return;
                   try {
-                    const res = await fetch(API_URL + '/api/auth/promote-admin', {
-                      method: 'POST',
-                      headers: getAuthHeaders()
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                      showNotification(data.message, 'success');
-                      fetchProfile();
-                    } else {
-                      showNotification(data.error || 'Failed to promote', 'error');
-                    }
+                    await updateDoc(doc(db, 'users', auth.currentUser.uid), { is_admin: true });
+                    setIsAdmin(true);
+                    showNotification('Admin status granted!', 'success');
                   } catch (e) {
+                    console.error('Promotion failed:', e);
                     showNotification('Failed to promote', 'error');
                   }
                 }}
@@ -4977,42 +4817,6 @@ Format the output with professional formatting, using bold headers, emojis for v
                 className="px-3 py-1.5 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-500 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors border border-emerald-500/20"
               >
                 Open Icon Generator
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    const res = await fetch(API_URL + '/api/admin/rebuild-icons', {
-                      method: 'POST',
-                      headers: getAuthHeaders()
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                      showNotification(data.message, 'success');
-                    } else {
-                      showNotification(data.error || 'Failed to rebuild', 'error');
-                    }
-                  } catch (e) {
-                    showNotification('Failed to rebuild', 'error');
-                  }
-                }}
-                className="px-3 py-1.5 bg-theme-secondary/10 hover:bg-theme-secondary/20 text-theme-secondary rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors border border-theme"
-              >
-                Rebuild Icons
-              </button>
-              <button
-                onClick={async () => {
-                  try {
-                    const res = await fetch(API_URL + '/api/debug/icons');
-                    const data = await res.json();
-                    console.log('[DEBUG] Icons:', data);
-                    showNotification(`Icons: ${data.public.length} in public, ${data.dist.length} in dist`, 'info');
-                  } catch (e) {
-                    showNotification('Failed to check icons', 'error');
-                  }
-                }}
-                className="px-3 py-1.5 bg-theme-secondary/10 hover:bg-theme-secondary/20 text-theme-secondary rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors border border-theme"
-              >
-                Check Icons
               </button>
             </div>
           </div>

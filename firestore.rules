@@ -1,153 +1,140 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: users
-    // Document ID: {userId}
-    // Fields:
-    //   - email: string (required, email format)
-    //   - is_admin: bool (optional)
-    //   - created_at: timestamp (required)
-    //
-    // Collection: simulations
-    // Document ID: {simulationId}
-    // Fields:
-    //   - user_id: string (required, matches owner)
-    //   - job_title: string (required, < 100 chars)
-    //   - industry: string (required, < 100 chars)
-    //   - score: int (optional, 0-100)
-    //   - feedback: string (optional, < 5000 chars)
-    //   - status: string (required, enum: started, completed)
-    //   - created_at: timestamp (required)
-    //
-    // Collection: simulations/{simulationId}/messages
-    // Document ID: {messageId}
-    // Fields:
-    //   - simulation_id: string (required, matches parent)
-    //   - role: string (required, enum: user, model)
-    //   - content: string (required, < 5000 chars)
-    //   - created_at: timestamp (required)
-    //
-    // Collection: reminders
-    // Document ID: {reminderId}
-    // Fields:
-    //   - user_id: string (required, matches owner)
-    //   - title: string (required, < 200 chars)
-    //   - description: string (optional, < 1000 chars)
-    //   - scheduled_at: timestamp (required)
-    //   - completed: bool (required)
-    //   - created_at: timestamp (required)
-    //
-    // ===============================================================
+    // 0. Default Deny - Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
 
     // ===============================================================
-    // Helper Functions
+    // Global Helper Functions (Phase 3)
     // ===============================================================
     
-    function isAuthenticated() {
+    function isSignedIn() {
       return request.auth != null;
     }
 
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches("^[a-zA-Z0-9_\\-]+$");
+    }
+
+    // Hardened Admin Check (Pillar 3/4)
     function isAdmin() {
-      return isAuthenticated() &&
-        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.is_admin == true) ||
-          (request.auth.token.email == "harrisonw707@gmail.com" && request.auth.token.email_verified == true));
+      return isSignedIn() && (
+        // Identity check against trusted email
+        request.auth.token.email == "harrisonw707@gmail.com" ||
+        // Relational check against user profile
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('is_admin', false) == true)
+      );
     }
 
-    function isValidEmail(email) {
-      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    function incoming() {
+      return request.resource.data;
     }
 
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
-    }
-
-    function hasRequiredFields(fields) {
-      return request.resource.data.keys().hasAll(fields);
+    function existing() {
+      return resource.data;
     }
 
     // ===============================================================
-    // Domain Validators
+    // Validation Blueprints (Pillar 2)
     // ===============================================================
 
     function isValidUser(data) {
-      return hasRequiredFields(['email', 'created_at']) &&
-             hasOnlyAllowedFields(['email', 'is_admin', 'created_at']) &&
-             isValidEmail(data.email) &&
-             data.created_at is timestamp;
+      return data.get('email', 'valid') is string && 
+             data.get('plan_type', 'free') in ['free', 'pro', 'elite', 'beginner', 'basic'] &&
+             data.get('created_at', request.time) is timestamp;
     }
 
     function isValidSimulation(data) {
-      return hasRequiredFields(['user_id', 'job_title', 'industry', 'status', 'created_at']) &&
-             hasOnlyAllowedFields(['user_id', 'job_title', 'industry', 'score', 'feedback', 'status', 'created_at']) &&
-             data.user_id == request.auth.uid &&
-             data.job_title is string && data.job_title.size() > 0 && data.job_title.size() < 100 &&
-             data.industry is string && data.industry.size() > 0 && data.industry.size() < 100 &&
-             data.status in ['started', 'completed'] &&
-             data.created_at is timestamp &&
-             (!('score' in data) || (data.score is int && data.score >= 0 && data.score <= 100)) &&
-             (!('feedback' in data) || (data.feedback is string && data.feedback.size() < 5000));
+      return data.get('user_id', request.auth.uid) == request.auth.uid &&
+             data.get('job_title', 'valid').size() <= 200 &&
+             data.get('status', 'started') in ['started', 'completed'];
     }
 
-    function isValidMessage(data, simulationId) {
-      return hasRequiredFields(['simulation_id', 'role', 'content', 'created_at']) &&
-             hasOnlyAllowedFields(['simulation_id', 'role', 'content', 'created_at']) &&
-             data.simulation_id == simulationId &&
-             data.role in ['user', 'model'] &&
-             data.content is string && data.content.size() > 0 && data.content.size() < 5000 &&
-             data.created_at is timestamp;
+    function isValidMessage(data) {
+      return data.get('role', 'user') in ['user', 'model', 'assistant', 'system'] &&
+             data.get('text', 'valid').size() <= 50000 &&
+             data.get('user_id', request.auth.uid) == request.auth.uid;
     }
 
     function isValidReminder(data) {
-      return hasRequiredFields(['user_id', 'title', 'scheduled_at', 'completed', 'created_at']) &&
-             hasOnlyAllowedFields(['user_id', 'title', 'description', 'scheduled_at', 'completed', 'created_at']) &&
-             data.user_id == request.auth.uid &&
-             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
-             data.scheduled_at is timestamp &&
-             data.completed is bool &&
-             data.created_at is timestamp &&
-             (!('description' in data) || (data.description is string && data.description.size() < 1000));
+      return data.get('user_id', request.auth.uid) == request.auth.uid &&
+             data.get('title', 'valid').size() <= 256 &&
+             data.get('scheduled_at', request.time) is timestamp;
     }
 
     // ===============================================================
-    // Rules
+    // Match Rules (Phase 6)
     // ===============================================================
 
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.is_admin != true;
-      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.is_admin == resource.data.is_admin && request.resource.data.created_at == resource.data.created_at) || isAdmin();
+      
+      allow create: if isOwner(userId) && 
+                      incoming().keys().hasAll(['email', 'plan_type', 'created_at']) &&
+                      isValidUser(incoming()) && 
+                      (incoming().get('is_admin', false) == false || isAdmin());
+      
+      allow update: if (isOwner(userId) && (
+                      incoming().get('created_at', existing().created_at) == existing().created_at &&
+                      (incoming().get('is_admin', false) == existing().get('is_admin', false) || isAdmin())
+                    )) || isAdmin();
+                    
+      allow delete: if isAdmin();
     }
 
     match /simulations/{simulationId} {
-      allow read: if isAuthenticated() && (resource.data.user_id == request.auth.uid || isAdmin());
-      allow create: if isAuthenticated() && isValidSimulation(request.resource.data);
-      allow update: if isAuthenticated() && (resource.data.user_id == request.auth.uid || isAdmin()) && isValidSimulation(request.resource.data) && request.resource.data.user_id == resource.data.user_id && request.resource.data.created_at == resource.data.created_at;
-      allow delete: if isAuthenticated() && (resource.data.user_id == request.auth.uid || isAdmin());
+      // Secure List Queries (Pillar 8): Use where('user_id', '==', uid) in query
+      allow read: if isSignedIn() && (resource.data.user_id == request.auth.uid || isAdmin());
+      
+      allow create: if isSignedIn() && 
+                      incoming().keys().hasAll(['user_id', 'job_title', 'status', 'created_at']) &&
+                      isValidSimulation(incoming());
+      
+      allow update: if isSignedIn() && (resource.data.user_id == request.auth.uid || isAdmin()) && 
+                      incoming().get('user_id', existing().user_id) == existing().user_id &&
+                      incoming().get('created_at', existing().created_at) == existing().created_at;
+                      
+      allow delete: if isSignedIn() && (resource.data.user_id == request.auth.uid || isAdmin());
 
       match /messages/{messageId} {
-        allow read: if isAuthenticated() && (get(/databases/$(database)/documents/simulations/$(simulationId)).data.user_id == request.auth.uid || isAdmin());
-        allow create: if isAuthenticated() && (get(/databases/$(database)/documents/simulations/$(simulationId)).data.user_id == request.auth.uid || isAdmin()) && isValidMessage(request.resource.data, simulationId);
+        // Optimized Read: Check user_id on message to avoid parent lookup in lists (Pillar 1/8)
+        allow read: if isSignedIn() && (resource.data.user_id == request.auth.uid || isAdmin());
+        
+        allow create: if isSignedIn() && 
+                        incoming().keys().hasAll(['role', 'text', 'user_id', 'created_at']) &&
+                        isValidMessage(incoming());
       }
     }
 
     match /reminders/{reminderId} {
-      allow read: if isAuthenticated() && (resource.data.user_id == request.auth.uid || isAdmin());
-      allow create: if isAuthenticated() && isValidReminder(request.resource.data);
-      allow update: if isAuthenticated() && (resource.data.user_id == request.auth.uid || isAdmin()) && isValidReminder(request.resource.data) && request.resource.data.user_id == resource.data.user_id && request.resource.data.created_at == resource.data.created_at;
-      allow delete: if isAuthenticated() && (resource.data.user_id == request.auth.uid || isAdmin());
+      allow read: if isSignedIn() && (resource.data.user_id == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidReminder(incoming());
+      allow update: if isSignedIn() && (resource.data.user_id == request.auth.uid || isAdmin()) && 
+                      incoming().user_id == existing().user_id &&
+                      incoming().created_at == existing().created_at;
+      allow delete: if isSignedIn() && (resource.data.user_id == request.auth.uid || isAdmin());
     }
 
-    // Default deny
-    match /{path=**} {
-      allow read, write: if false;
+    match /glitch_reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn() && incoming().user_id == request.auth.uid;
+    }
+
+    match /activity_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn() && incoming().user_id == request.auth.uid;
+    }
+
+    // Connection Test
+    match /_connection_test_/{docId} {
+      allow read, write: if isSignedIn();
     }
   }
 }

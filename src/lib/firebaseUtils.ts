@@ -1,16 +1,4 @@
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getAnalytics } from "firebase/analytics";
-import firebaseConfig from "../../firebase-applet-config.json";
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-
-// Analytics is only available in browser
-export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
+import { auth } from '../firebase';
 
 export enum OperationType {
   CREATE = 'create',
@@ -41,8 +29,17 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const message = error instanceof Error ? error.message : String(error);
+  
+  // Extract index creation URL if present
+  let indexUrl = null;
+  if (message.includes('https://console.firebase.google.com')) {
+    const match = message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
+    if (match) indexUrl = match[0];
+  }
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: message,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -58,9 +55,12 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     },
     operationType,
     path
+  };
+
+  if (indexUrl) {
+    console.error('CRITICAL: Missing Firestore Index. Create it here: ', indexUrl);
   }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  
+  console.error('Firestore Error: ', JSON.stringify(errInfo, null, 2));
   throw new Error(JSON.stringify(errInfo));
 }
-
-export default app;

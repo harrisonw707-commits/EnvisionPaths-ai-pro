@@ -6,10 +6,12 @@ import Database from 'better-sqlite3';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import Stripe from 'stripe';
+// Import AI SDK
+import * as GoogleAI from "@google/genai";
+const { GoogleGenAI, Modality } = GoogleAI;
 import * as bcryptjs from 'bcryptjs';
 import speakeasy from 'speakeasy';
 import QRCode from 'qrcode';
-import { GoogleGenAI, Modality } from "@google/genai";
 import { Jimp } from 'jimp';
 
 /**
@@ -309,6 +311,14 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
   
+  // PRE-MIDDLEWARE LOGGING
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      console.log(`[SERVER] Incoming API Request: ${req.method} ${req.path}`);
+    }
+    next();
+  });
+
   // CRITICAL: Serve manifest and service worker at the very top with correct headers
   // This ensures scanners like PWABuilder don't time out or get blocked by other middleware
   app.get(['/manifest.json', '/manifest-v2.json', '/manifest-v3.json', '/sw.js', '/service-worker.js'], (req, res) => {
@@ -1507,70 +1517,108 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   });
 
 
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
+// --- AI ROUTES (Gemini Proxy) ---
+app.get('/api/ai/health', (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.VITE_GEMINI_API_KEY;
+  res.json({ 
+    status: 'ok', 
+    hasKey: !!apiKey,
+    keyPrefix: apiKey ? apiKey.substring(0, 4) : null,
+    genAiDefined: typeof GoogleGenAI !== 'undefined'
+  });
+});
 
-    app.use(vite.middlewares);
+const getServerAi = () => {
+    // Check all possible env vars for the key
+    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || process.env.VITE_GEMINI_API_KEY;
+    
+    if (!apiKey) {
+      console.warn('[AI] ERROR: No Gemini API key found in environment variables.');
+    } else {
+      const keyPrefix = apiKey.substring(0, 4);
+      const keySuffix = apiKey.length > 8 ? apiKey.substring(apiKey.length - 4) : '****';
+      console.log(`[AI] Initializing GoogleGenAI with key: ${keyPrefix}...${keySuffix}`);
+    }
 
-    app.get('*', async (req, res, next) => {
-    if (req.url.startsWith('/api')) return next();
+    return new GoogleGenAI({ apiKey: apiKey || 'MISSING_KEY' });
+  };
+
+  app.post('/api/ai/generate', async (req, res) => {
     try {
-      const html = await vite.transformIndexHtml(req.url, 'index.html');
-      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
-    } catch (e) {
-      vite.ssrFixStacktrace(e as Error);
-      next(e);
+      const { prompt, messageText, systemInstruction, history } = req.body || {};
+      
+      const ai = getServerAi();
+      const input =
+        typeof prompt === 'string'
+          ? prompt
+          : [
+              ...(Array.isArray(history) ? history : []),
+              ...(typeof messageText === 'string' ? [{ role: 'user', parts: [{ text: messageText }] }] : [])
+            ];
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: input,
+        config: typeof systemInstruction === 'string' && systemInstruction.trim()
+          ? { systemInstruction }
+          : undefined
+      });
+
+      return res.json({ text: response.text || '' });
+    } catch (e: any) {
+      console.error('[AI GENERATE ERROR]', e);
+      return res.status(500).json({ error: e.message || 'AI generation failed' });
     }
   });
-  } else {
-    const distDir = path.join(process.cwd(), 'dist');
-    
-    app.get('/robots.txt', (req, res) => {
-      res.type('text/plain');
-      res.send('User-agent: *\nAllow: /');
-    });
 
-    app.use(express.static(distDir, {
-      setHeaders: (res, path) => {
-        if (path.endsWith('.js')) {
-          res.setHeader('Service-Worker-Allowed', '/');
-        }
-      }
-    }));
+  app.post('/api/ai/speech', async (req, res) => {
+    try {
+      const { text, voiceName } = req.body || {};
+      if (!text) return res.status(400).json({ error: 'Text is required' });
 
-    app.get('*', (req, res) => {
-      // Don't serve index.html for missing files that look like static assets
-      // Use req.path instead of req.url to avoid issues with query parameters
-      if (req.path.includes('.') && !req.path.endsWith('.html')) {
-        // Check if it exists in dist/icons or public/icons
-        const iconPath = path.join(process.cwd(), 'dist', req.path.substring(1));
-        const publicIconPath = path.join(process.cwd(), 'public', req.path.substring(1));
-        if (fs.existsSync(iconPath)) return res.sendFile(iconPath);
-        if (fs.existsSync(publicIconPath)) return res.sendFile(publicIconPath);
-        
-        return res.status(404).end();
-      }
-      
-      const indexPath = path.join(distDir, 'index.html');
-      if (fs.existsSync(indexPath)) {
-        let html = fs.readFileSync(indexPath, 'utf-8');
-        const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || '';
-        const injection = `<script>window.GEMINI_API_KEY = ${JSON.stringify(apiKey)};</script>`;
-        html = html.replace('<!-- GEMINI_API_KEY_INJECTION -->', injection);
-        // Force local manifest link
-        html = html.replace(/<link rel="manifest" href="[^"]+"[^>]*>/g, '<link rel="manifest" href="/manifest.json">');
-        res.status(200).set({ 'Content-Type': 'text/html' }).send(html);
-      } else {
-        res.status(404).send('Not Found');
-      }
-    });
-  }
+      const ai = getServerAi();
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-tts-preview',
+        contents: [{ parts: [{ text: `Speak this as a warm, professional human career coach: ${text}` }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voiceName || 'Kore' },
+            },
+          },
+        },
+      });
 
-  // Global Error Handler
+      const audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;
+      return res.json({ audio });
+    } catch (e: any) {
+      console.error('[AI SPEECH ERROR]', e);
+      return res.status(500).json({ error: e.message || 'Speech generation failed' });
+    }
+  });
+
+  app.post('/api/ai/transcribe', async (req, res) => {
+    try {
+      const { base64Audio, mimeType } = req.body || {};
+      if (!base64Audio || !mimeType) return res.status(400).json({ error: 'Audio and mimeType required' });
+
+      const ai = getServerAi();
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [
+          { inlineData: { mimeType, data: base64Audio } },
+          { text: 'Transcribe the audio exactly. If no speech, return empty string.' }
+        ]
+      });
+
+      return res.json({ text: response.text?.trim() || '' });
+    } catch (e: any) {
+      console.error('[AI TRANSCRIBE ERROR]', e);
+      return res.status(500).json({ error: e.message || 'Transcription failed' });
+    }
+  });
+
   app.post('/api/upload-icon', (req, res) => {
     const user = getSessionUser(req);
     if (!user || !user.is_admin) {
@@ -1613,6 +1661,86 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
     }
   });
 
+  if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+
+    app.use(vite.middlewares);
+
+    app.get('*', async (req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      console.warn(`[SERVER] Unmatched API route (DEV): ${req.method} ${req.path}`);
+      return res.status(404).json({ error: 'API route not found (DEV)', path: req.path });
+    }
+    try {
+      let html = await vite.transformIndexHtml(req.url, 'index.html');
+      
+      // Inject API Key for client-side use
+      const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || '';
+      const injection = `\n    <script>window.GEMINI_API_KEY = ${JSON.stringify(apiKey)};</script>`;
+      html = html.replace('<!-- GEMINI_API_KEY_INJECTION -->', injection);
+      
+      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+    } catch (e) {
+      vite.ssrFixStacktrace(e as Error);
+      next(e);
+    }
+  });
+  } else {
+    const distDir = path.join(process.cwd(), 'dist');
+    
+    app.get('/robots.txt', (req, res) => {
+      res.type('text/plain');
+      res.send('User-agent: *\nAllow: /');
+    });
+
+    app.use(express.static(distDir, {
+      setHeaders: (res, path) => {
+        if (path.endsWith('.js')) {
+          res.setHeader('Service-Worker-Allowed', '/');
+        }
+      }
+    }));
+
+    app.get('*', (req, res) => {
+      // Don't serve index.html for API routes that weren't matched
+      if (req.path.startsWith('/api')) {
+        console.warn(`[SERVER] Unmatched API route: ${req.method} ${req.path}`);
+        return res.status(404).json({ 
+          error: 'API route not found',
+          path: req.path,
+          method: req.method
+        });
+      }
+
+      // Don't serve index.html for missing files that look like static assets
+      // Use req.path instead of req.url to avoid issues with query parameters
+      if (req.path.includes('.') && !req.path.endsWith('.html')) {
+        // Check if it exists in dist/icons or public/icons
+        const iconPath = path.join(process.cwd(), 'dist', req.path.substring(1));
+        const publicIconPath = path.join(process.cwd(), 'public', req.path.substring(1));
+        if (fs.existsSync(iconPath)) return res.sendFile(iconPath);
+        if (fs.existsSync(publicIconPath)) return res.sendFile(publicIconPath);
+        
+        return res.status(404).end();
+      }
+      
+      const indexPath = path.join(distDir, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        let html = fs.readFileSync(indexPath, 'utf-8');
+        // Force local manifest link
+        html = html.replace(/<link rel="manifest" href="[^"]+"[^>]*>/g, '<link rel="manifest" href="/manifest.json">');
+        res.status(200).set({ 'Content-Type': 'text/html' }).send(html);
+      } else {
+        res.status(404).send('Not Found');
+      }
+    });
+  }
+
+  // Global Error Handler
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('[GLOBAL ERROR]', err);
     if (res.headersSent) return next(err);

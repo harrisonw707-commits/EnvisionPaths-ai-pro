@@ -60,25 +60,45 @@ export default function IconGenerator({ apiUrl, authHeaders, onNotification }: I
         ctx.drawImage(img, 0, 0, size, size);
         const pngData = canvas.toDataURL('image/png');
 
-        setStatus('uploading');
-        const res = await fetch(`${apiUrl}/api/upload-icon`, {
-          method: 'POST',
-          headers: {
-            ...authHeaders,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ name, data: pngData })
-        });
+        // Upload to server using API
+        try {
+          const response = await fetch(`${apiUrl}/api/upload-icon`, {
+            method: 'POST',
+            headers: {
+              ...authHeaders,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              name,
+              data: pngData
+            })
+          });
 
-        if (!res.ok) {
-          throw new Error(`Failed to upload ${name}`);
+          if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || `Upload failed for ${name}`);
+          }
+          
+          console.log(`[ICONS] Successfully uploaded ${name}`);
+        } catch (uploadError: any) {
+          console.error(`[ICONS] Upload failed for ${name}:`, uploadError);
+          // We continue with other sizes even if one fails, but track the error
+          onNotification(`Failed to upload ${name}: ${uploadError.message}`, 'error');
         }
+
+        // Also download locally as a backup
+        const link = document.createElement('a');
+        link.href = pngData;
+        link.download = name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       }
 
       URL.revokeObjectURL(url);
       setProgress(100);
       setStatus('complete');
-      onNotification('All icons generated and uploaded successfully!', 'success');
+      onNotification('All icons generated and downloaded successfully!', 'success');
     } catch (e: any) {
       console.error('[ICONS] Generation failed:', e);
       setStatus('error');

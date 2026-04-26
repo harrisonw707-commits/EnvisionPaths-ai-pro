@@ -1,7 +1,7 @@
 {
   "name": "envisionpaths-ai-pro",
   "private": true,
-  "version": "0.0.0",
+  "version": "3.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -11,14 +11,14 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "@google/genai": "latest",
+    "@google/genai": "^1.50.1",
     "@tailwindcss/vite": "^4.2.1",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^11.3.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "firebase": "^12.10.0",
+    "firebase": "^12.12.0",
     "jimp": "^1.6.0",
     "lucide-react": "^0.441.0",
     "motion": "^11.5.4",
